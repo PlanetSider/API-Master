@@ -8,6 +8,9 @@ COPY package.json pnpm-lock.yaml pnpm-workspace.yaml .npmrc ./
 RUN pnpm install --frozen-lockfile --ignore-scripts
 
 COPY . .
+# Install skips lifecycle scripts, so run the project's postinstall explicitly
+# to generate WXT's inherited TypeScript config before the Web Vite build.
+RUN pnpm run postinstall
 RUN pnpm run build:web:all
 
 FROM node:24-bookworm-slim AS runtime
