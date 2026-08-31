@@ -133,6 +133,16 @@ const createProps = (): ComponentProps<typeof AccountDashboard> => ({
   onLogout: asyncHandler(),
 })
 
+const openAccountManagement = async (
+  user: ReturnType<typeof userEvent.setup>,
+) => {
+  await user.click(screen.getByRole("button", { name: "账户管理" }))
+}
+
+beforeEach(() => {
+  window.history.replaceState(null, "", "#overview")
+})
+
 describe("AccountDashboard bulk account management", () => {
   it("selects the filtered accounts and applies a bulk status action", async () => {
     const user = userEvent.setup()
@@ -146,6 +156,7 @@ describe("AccountDashboard bulk account management", () => {
       lastUpdated: 0,
     }
     render(<AccountDashboard {...props} />)
+    await openAccountManagement(user)
 
     await user.type(
       screen.getByPlaceholderText("搜索名称、站点或类型"),
@@ -170,6 +181,7 @@ describe("AccountDashboard bulk account management", () => {
       lastUpdated: 0,
     }
     render(<AccountDashboard {...props} />)
+    await openAccountManagement(user)
 
     await user.click(screen.getAllByRole("button", { name: "置顶账户" })[0])
     expect(props.onTogglePinned).toHaveBeenCalledWith(
@@ -189,6 +201,7 @@ describe("AccountDashboard bulk account management", () => {
       lastUpdated: 0,
     }
     render(<AccountDashboard {...props} />)
+    await openAccountManagement(user)
 
     await user.click(screen.getByRole("checkbox", { name: "选择账户 Alpha" }))
     await user.click(screen.getByRole("button", { name: "批量删除" }))
@@ -204,6 +217,36 @@ describe("AccountDashboard bulk account management", () => {
 })
 
 describe("AccountDashboard mobile navigation", () => {
+  it("renders the upstream-style overview as the default page", () => {
+    render(<AccountDashboard {...createProps()} />)
+
+    expect(screen.getByTestId("web-options-overview")).toBeInTheDocument()
+    expect(
+      screen.getByRole("heading", { name: "账户总览" }),
+    ).toBeInTheDocument()
+    expect(
+      screen.getByRole("heading", { name: "开始使用" }),
+    ).toBeInTheDocument()
+    expect(
+      screen.getByRole("heading", { name: "配置中心" }),
+    ).toBeInTheDocument()
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument()
+  })
+
+  it("switches sidebar entries into inline pages instead of dialogs", async () => {
+    const user = userEvent.setup()
+    const props = createProps()
+    render(<AccountDashboard {...props} />)
+
+    await user.click(screen.getByRole("button", { name: "自动刷新" }))
+
+    expect(window.location.hash).toBe("#automation")
+    expect(
+      screen.getByRole("heading", { name: "自动刷新" }),
+    ).toBeInTheDocument()
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument()
+  })
+
   it("does not expose bookmark or data migration entries", async () => {
     const user = userEvent.setup()
     render(<AccountDashboard {...createProps()} />)

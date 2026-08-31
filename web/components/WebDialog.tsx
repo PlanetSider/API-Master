@@ -1,5 +1,22 @@
 import { X } from "lucide-react"
-import { useEffect, useId, useRef, type ReactNode } from "react"
+import {
+  createContext,
+  useContext,
+  useEffect,
+  useId,
+  useRef,
+  type ReactNode,
+} from "react"
+
+const WebDialogInlineContext = createContext(false)
+
+export function WebDialogInlineProvider({ children }: { children: ReactNode }) {
+  return (
+    <WebDialogInlineContext.Provider value>
+      {children}
+    </WebDialogInlineContext.Provider>
+  )
+}
 
 interface WebDialogProps {
   open: boolean
@@ -18,6 +35,7 @@ export function WebDialog({
   footer,
   onClose,
 }: WebDialogProps) {
+  const inline = useContext(WebDialogInlineContext)
   const panelRef = useRef<HTMLDivElement>(null)
   const onCloseRef = useRef(onClose)
   const instanceId = useId()
@@ -27,7 +45,7 @@ export function WebDialog({
   onCloseRef.current = onClose
 
   useEffect(() => {
-    if (!open) return
+    if (!open || inline) return
 
     const previousFocus = document.activeElement as HTMLElement | null
     panelRef.current?.focus()
@@ -39,9 +57,43 @@ export function WebDialog({
       document.removeEventListener("keydown", handleKeyDown)
       previousFocus?.focus()
     }
-  }, [open])
+  }, [inline, open])
 
   if (!open) return null
+
+  if (inline) {
+    return (
+      <div
+        ref={panelRef}
+        aria-labelledby={titleId}
+        aria-describedby={description ? descriptionId : undefined}
+        tabIndex={-1}
+        className="w-full outline-none"
+      >
+        <div className="border-b border-gray-200 px-4 py-5 sm:px-6 dark:border-gray-700">
+          <div className="min-w-0">
+            <h2 id={titleId} className="text-xl font-semibold tracking-tight">
+              {title}
+            </h2>
+            {description ? (
+              <p
+                id={descriptionId}
+                className="mt-1 text-sm text-gray-500 dark:text-gray-400"
+              >
+                {description}
+              </p>
+            ) : null}
+          </div>
+        </div>
+        <div className="px-4 py-5 sm:px-6">{children}</div>
+        {footer ? (
+          <div className="flex flex-wrap justify-end gap-2 border-t border-gray-200 px-4 py-4 sm:px-6 dark:border-gray-700">
+            {footer}
+          </div>
+        ) : null}
+      </div>
+    )
+  }
 
   return (
     <div
