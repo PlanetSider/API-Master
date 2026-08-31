@@ -203,7 +203,7 @@ export function TagsDialog({
         }
       >
         <p className="text-sm text-gray-600 dark:text-gray-300">
-          账户和书签中的该标签引用会一并移除。
+          账户和 API 凭据中的该标签引用会一并移除。
         </p>
       </WebDialog>
     </>

@@ -36,12 +36,6 @@ const createAccount = (
 const createProps = (): ComponentProps<typeof AccountDashboard> => ({
   data: { accounts: [], revision: 0, lastUpdated: 0 },
   tags: { tags: [], revision: 0 },
-  bookmarks: {
-    bookmarks: [],
-    pinnedBookmarkIds: [],
-    revision: 0,
-    lastUpdated: 0,
-  },
   siteAnnouncements: {
     records: [],
     sites: [],
@@ -67,14 +61,10 @@ const createProps = (): ComponentProps<typeof AccountDashboard> => ({
   message: null,
   onCreate: asyncHandler(),
   onUpdate: asyncHandler(),
-  onLoadBookmarks: asyncHandler(),
   onLoadSiteAnnouncements: asyncHandler(),
   onSyncSiteAnnouncements: asyncHandler(),
   onMarkSiteAnnouncementRead: asyncHandler(),
   onMarkSiteAnnouncementsRead: asyncHandler(),
-  onCreateBookmark: asyncHandler(),
-  onUpdateBookmark: asyncHandler(),
-  onDeleteBookmark: asyncHandler(),
   onCreateTag: asyncHandler(),
   onRenameTag: asyncHandler(),
   onDeleteTag: asyncHandler(),
@@ -140,29 +130,7 @@ const createProps = (): ComponentProps<typeof AccountDashboard> => ({
   onSaveExternalNotifications: asyncHandler(),
   onTestExternalNotification: asyncHandler(),
   onDelete: asyncHandler(),
-  onImport: asyncHandler(),
-  onExport: asyncHandler(),
   onLogout: asyncHandler(),
-})
-
-describe("AccountDashboard backup restore", () => {
-  it("requires confirmation before importing a selected backup", async () => {
-    const user = userEvent.setup()
-    const props = createProps()
-    const { container } = render(<AccountDashboard {...props} />)
-    const input = container.querySelector('input[type="file"]')
-    expect(input).toBeInstanceOf(HTMLInputElement)
-    const file = new File(["{}"], "backup.json", {
-      type: "application/json",
-    })
-
-    await user.upload(input as HTMLInputElement, file)
-
-    expect(screen.getByRole("dialog", { name: "恢复备份" })).toBeInTheDocument()
-    expect(props.onImport).not.toHaveBeenCalled()
-    await user.click(screen.getByRole("button", { name: "确认恢复" }))
-    expect(props.onImport).toHaveBeenCalledWith(file)
-  })
 })
 
 describe("AccountDashboard bulk account management", () => {
@@ -236,6 +204,31 @@ describe("AccountDashboard bulk account management", () => {
 })
 
 describe("AccountDashboard mobile navigation", () => {
+  it("does not expose bookmark or data migration entries", async () => {
+    const user = userEvent.setup()
+    render(<AccountDashboard {...createProps()} />)
+
+    expect(
+      screen.queryByRole("button", { name: "书签" }),
+    ).not.toBeInTheDocument()
+    expect(
+      screen.queryByRole("button", { name: "数据迁移" }),
+    ).not.toBeInTheDocument()
+    expect(
+      screen.queryByRole("button", { name: "导入" }),
+    ).not.toBeInTheDocument()
+    expect(
+      screen.queryByRole("button", { name: "导出" }),
+    ).not.toBeInTheDocument()
+
+    await user.click(screen.getByRole("button", { name: "打开主导航" }))
+    const navigation = screen.getByRole("navigation", {
+      name: "移动端主导航",
+    })
+    expect(within(navigation).queryByText("书签")).not.toBeInTheDocument()
+    expect(within(navigation).queryByText("数据迁移")).not.toBeInTheDocument()
+  })
+
   it("opens every management entry from the compact navigation drawer", async () => {
     const user = userEvent.setup()
     const props = createProps()

@@ -3,14 +3,14 @@ import {
   ArrowDown,
   ArrowUp,
   Bell,
-  Bookmark,
   Boxes,
   CalendarCheck2,
   ChartNoAxesCombined,
+  ChevronsLeft,
+  ChevronsRight,
   CircleDollarSign,
   Cloud,
   Database,
-  Download,
   Globe2,
   History,
   KeyRound,
@@ -29,12 +29,11 @@ import {
   Tags,
   TimerReset,
   Trash2,
-  Upload,
   Users,
   X,
   type LucideIcon,
 } from "lucide-react"
-import { useEffect, useMemo, useRef, useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 
 import { Checkbox } from "~/components/ui"
 import { SiteHealthStatus } from "~/types"
@@ -59,13 +58,10 @@ import type {
   WebAutomationSettingsPatch,
   WebAutomationSettingsResponse,
   WebBalanceHistoryResponse,
-  WebBookmarkCreateInput,
-  WebBookmarkListResponse,
-  WebBookmarkPatchInput,
-  WebBookmarkSummary,
   WebChannelConfigPatch,
   WebChannelConfigResponse,
   WebCreateAccountInput,
+  WebCredentialExportFormat,
   WebCurrencyType,
   WebDavSettingsInput,
   WebDavSettingsResponse,
@@ -89,14 +85,12 @@ import type {
   WebUsageAnalyticsQuery,
   WebUsageAnalyticsResponse,
   WebUsageHistoryResponse,
-  WebCredentialExportFormat,
 } from "~/web/contracts"
 
 import { AccountFormDialog } from "./AccountFormDialog"
 import { AllModelCatalogDialog } from "./AllModelCatalogDialog"
 import { AutomationSettingsDialog } from "./AutomationSettingsDialog"
 import { BalanceHistoryDialog } from "./BalanceHistoryDialog"
-import { BookmarksDialog } from "./BookmarksDialog"
 import { CredentialProfilesDialog } from "./CredentialProfilesDialog"
 import { ExternalNotificationSettingsDialog } from "./ExternalNotificationSettingsDialog"
 import { KeyManagementDialog } from "./KeyManagementDialog"
@@ -109,14 +103,13 @@ import { SiteAnnouncementsDialog } from "./SiteAnnouncementsDialog"
 import { TagsDialog } from "./TagsDialog"
 import { UsageAnalyticsDialog } from "./UsageAnalyticsDialog"
 import { UsageHistoryDialog } from "./UsageHistoryDialog"
+import { WebApiCheckDialog } from "./WebApiCheckDialog"
 import { WebDavSettingsDialog } from "./WebDavSettingsDialog"
 import { WebDialog } from "./WebDialog"
-import { WebApiCheckDialog } from "./WebApiCheckDialog"
 
 interface AccountDashboardProps {
   data: WebAccountListResponse
   tags: WebTagListResponse
-  bookmarks: WebBookmarkListResponse
   siteAnnouncements: WebSiteAnnouncementListResponse
   automation: WebAutomationSettingsResponse | null
   history: WebBalanceHistoryResponse | null
@@ -142,14 +135,10 @@ interface AccountDashboardProps {
     input: WebAccountDetectionInput,
   ) => Promise<WebAccountDetectionResponse>
   onUpdate: (accountId: string, input: WebAccountPatchInput) => Promise<void>
-  onLoadBookmarks: () => Promise<void>
   onLoadSiteAnnouncements: () => Promise<void>
   onSyncSiteAnnouncements: () => Promise<void>
   onMarkSiteAnnouncementRead: (recordId: string) => Promise<void>
   onMarkSiteAnnouncementsRead: (siteKey?: string) => Promise<void>
-  onCreateBookmark: (input: WebBookmarkCreateInput) => Promise<void>
-  onUpdateBookmark: (id: string, input: WebBookmarkPatchInput) => Promise<void>
-  onDeleteBookmark: (bookmark: WebBookmarkSummary) => Promise<void>
   onCreateTag: (name: string) => Promise<void>
   onRenameTag: (tagId: string, name: string) => Promise<void>
   onDeleteTag: (tag: WebTagSummary) => Promise<void>
@@ -239,8 +228,6 @@ interface AccountDashboardProps {
     channel: WebExternalNotificationChannel,
   ) => Promise<void>
   onDelete: (account: WebAccountSummary) => Promise<void>
-  onImport: (file: File) => Promise<void>
-  onExport: () => Promise<void>
   onLogout: () => Promise<void>
 }
 
@@ -276,7 +263,6 @@ const getHealthPresentation = (account: WebAccountSummary) => {
 export function AccountDashboard({
   data,
   tags,
-  bookmarks,
   siteAnnouncements,
   automation,
   history,
@@ -300,14 +286,10 @@ export function AccountDashboard({
   onCreate,
   onDetectAccount,
   onUpdate,
-  onLoadBookmarks,
   onLoadSiteAnnouncements,
   onSyncSiteAnnouncements,
   onMarkSiteAnnouncementRead,
   onMarkSiteAnnouncementsRead,
-  onCreateBookmark,
-  onUpdateBookmark,
-  onDeleteBookmark,
   onCreateTag,
   onRenameTag,
   onDeleteTag,
@@ -368,13 +350,10 @@ export function AccountDashboard({
   onSaveExternalNotifications,
   onTestExternalNotification,
   onDelete,
-  onImport,
-  onExport,
   onLogout,
 }: AccountDashboardProps) {
   const [search, setSearch] = useState("")
   const [addOpen, setAddOpen] = useState(false)
-  const [bookmarksOpen, setBookmarksOpen] = useState(false)
   const [tagsOpen, setTagsOpen] = useState(false)
   const [siteAnnouncementsOpen, setSiteAnnouncementsOpen] = useState(false)
   const [editTarget, setEditTarget] = useState<WebAccountSummary | null>(null)
@@ -395,13 +374,12 @@ export function AccountDashboard({
     useState(false)
   const [preferencesOpen, setPreferencesOpen] = useState(false)
   const [mobileNavOpen, setMobileNavOpen] = useState(false)
-  const [pendingImport, setPendingImport] = useState<File | null>(null)
   const [selectedAccountIds, setSelectedAccountIds] = useState<string[]>([])
   const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false)
   const [deleteTarget, setDeleteTarget] = useState<WebAccountSummary | null>(
     null,
   )
-  const fileInputRef = useRef<HTMLInputElement>(null)
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
 
   const tagNameById = useMemo(
     () => new Map(tags.tags.map((tag) => [tag.id, tag.name])),
@@ -543,6 +521,7 @@ export function AccountDashboard({
   const navigationItems: Array<{
     label: string
     icon: LucideIcon
+    category: string
     active?: boolean
     badge?: number
     onClick: () => void | Promise<void>
@@ -550,22 +529,14 @@ export function AccountDashboard({
     {
       label: "账户总览",
       icon: LayoutDashboard,
+      category: "概览",
       active: true,
       onClick: () => setMobileNavOpen(false),
     },
     {
-      label: "书签",
-      icon: Bookmark,
-      badge: bookmarks.bookmarks.length,
-      onClick: async () => {
-        await onLoadBookmarks()
-        setBookmarksOpen(true)
-        setMobileNavOpen(false)
-      },
-    },
-    {
       label: "用量分析",
       icon: ChartNoAxesCombined,
+      category: "概览",
       onClick: async () => {
         await onLoadUsageAnalytics()
         setUsageAnalyticsOpen(true)
@@ -575,6 +546,7 @@ export function AccountDashboard({
     {
       label: "网站公告",
       icon: Bell,
+      category: "概览",
       badge: siteAnnouncements.unreadCount,
       onClick: async () => {
         await onLoadSiteAnnouncements()
@@ -583,16 +555,9 @@ export function AccountDashboard({
       },
     },
     {
-      label: "数据迁移",
-      icon: Database,
-      onClick: () => {
-        fileInputRef.current?.click()
-        setMobileNavOpen(false)
-      },
-    },
-    {
       label: "模型总览",
       icon: Boxes,
+      category: "资源",
       onClick: async () => {
         await onLoadAllModels()
         setAllModelsOpen(true)
@@ -602,6 +567,7 @@ export function AccountDashboard({
     {
       label: "自动刷新",
       icon: TimerReset,
+      category: "自动化",
       onClick: () => {
         setAutomationOpen(true)
         setMobileNavOpen(false)
@@ -610,6 +576,7 @@ export function AccountDashboard({
     {
       label: "运行能力",
       icon: Activity,
+      category: "系统",
       onClick: async () => {
         await onLoadRuntimeCapabilities()
         setRuntimeCapabilitiesOpen(true)
@@ -619,6 +586,7 @@ export function AccountDashboard({
     {
       label: "外部通知",
       icon: Bell,
+      category: "系统",
       onClick: async () => {
         await onLoadExternalNotifications()
         setExternalNotificationsOpen(true)
@@ -628,6 +596,7 @@ export function AccountDashboard({
     {
       label: "API 凭据库",
       icon: KeyRound,
+      category: "系统",
       onClick: async () => {
         await onLoadCredentialProfiles()
         setCredentialProfilesOpen(true)
@@ -637,6 +606,7 @@ export function AccountDashboard({
     {
       label: "API 检测",
       icon: ShieldCheck,
+      category: "系统",
       onClick: () => {
         setApiCheckOpen(true)
         setMobileNavOpen(false)
@@ -645,6 +615,7 @@ export function AccountDashboard({
     {
       label: "显示偏好",
       icon: Settings2,
+      category: "系统",
       onClick: async () => {
         await onLoadPreferences()
         setPreferencesOpen(true)
@@ -655,37 +626,74 @@ export function AccountDashboard({
 
   return (
     <div className="min-h-screen bg-gray-50 text-gray-950 dark:bg-gray-950 dark:text-gray-100">
-      <aside className="fixed inset-y-0 left-0 hidden w-60 border-r border-gray-200 bg-white lg:flex lg:flex-col dark:border-gray-800 dark:bg-gray-900">
-        <div className="flex h-16 items-center gap-3 border-b border-gray-200 px-5 dark:border-gray-800">
+      <aside
+        className={`fixed inset-y-0 left-0 hidden border-r border-gray-200 bg-white lg:flex lg:flex-col dark:border-gray-800 dark:bg-gray-900 ${sidebarCollapsed ? "w-16" : "w-60"}`}
+      >
+        <div
+          className={`flex h-16 items-center gap-3 border-b border-gray-200 px-3 dark:border-gray-800 ${sidebarCollapsed ? "justify-center" : "px-5"}`}
+        >
           <div className="flex size-9 items-center justify-center rounded-md bg-blue-600 text-white">
             <Globe2 className="size-5" />
           </div>
-          <div className="min-w-0">
+          <div className={`min-w-0 ${sidebarCollapsed ? "hidden" : ""}`}>
             <div className="truncate text-sm font-semibold">All API Hub</div>
             <div className="text-xs text-gray-500">Web Console</div>
           </div>
         </div>
-        <nav className="flex-1 space-y-1 p-3" aria-label="主导航">
+        <nav
+          className="flex-1 space-y-1 overflow-y-auto p-3"
+          aria-label="主导航"
+        >
           {navigationItems.map(
-            ({ label, icon: Icon, active, badge, onClick }) => (
-              <button
-                key={label}
-                onClick={() => void onClick()}
-                className={`flex h-10 w-full items-center gap-3 rounded-md px-3 text-sm ${
-                  active
-                    ? "bg-blue-50 font-medium text-blue-700 dark:bg-blue-950/50 dark:text-blue-300"
-                    : "text-gray-600 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-800"
-                }`}
-              >
-                <Icon className="size-4" />
-                {label}
-                {badge ? (
-                  <span className="ml-auto text-xs text-gray-400">{badge}</span>
+            (
+              { label, icon: Icon, active, badge, onClick, category },
+              index,
+            ) => (
+              <div key={label}>
+                {!sidebarCollapsed &&
+                (index === 0 ||
+                  navigationItems[index - 1]?.category !== category) ? (
+                  <div className="mt-4 mb-2 px-3 text-[11px] font-semibold tracking-wide text-gray-400 uppercase first:mt-0">
+                    {category}
+                  </div>
                 ) : null}
-              </button>
+                <button
+                  onClick={() => void onClick()}
+                  title={sidebarCollapsed ? label : undefined}
+                  aria-label={sidebarCollapsed ? label : undefined}
+                  className={`flex h-10 w-full items-center gap-3 rounded-md px-3 text-sm ${sidebarCollapsed ? "justify-center px-0" : ""} ${
+                    active
+                      ? "bg-blue-50 font-medium text-blue-700 dark:bg-blue-950/50 dark:text-blue-300"
+                      : "text-gray-600 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-800"
+                  }`}
+                >
+                  <Icon className="size-4" />
+                  <span className={sidebarCollapsed ? "hidden" : ""}>
+                    {label}
+                  </span>
+                  {badge && !sidebarCollapsed ? (
+                    <span className="ml-auto text-xs text-gray-400">
+                      {badge}
+                    </span>
+                  ) : null}
+                </button>
+              </div>
             ),
           )}
         </nav>
+        <button
+          type="button"
+          aria-label={sidebarCollapsed ? "展开导航" : "折叠导航"}
+          title={sidebarCollapsed ? "展开导航" : "折叠导航"}
+          onClick={() => setSidebarCollapsed((value) => !value)}
+          className="mx-3 mb-3 hidden h-9 items-center justify-center rounded-md border border-gray-200 text-gray-500 hover:bg-gray-100 lg:flex dark:border-gray-700 dark:hover:bg-gray-800"
+        >
+          {sidebarCollapsed ? (
+            <ChevronsRight className="size-4" />
+          ) : (
+            <ChevronsLeft className="size-4" />
+          )}
+        </button>
         <div className="border-t border-gray-200 p-3 dark:border-gray-800">
           <button
             onClick={() => void onLogout()}
@@ -697,7 +705,7 @@ export function AccountDashboard({
         </div>
       </aside>
 
-      <div className="lg:pl-60">
+      <div className={sidebarCollapsed ? "lg:pl-16" : "lg:pl-60"}>
         <header className="flex min-h-16 items-center justify-between gap-4 border-b border-gray-200 bg-white px-4 py-3 sm:px-6 dark:border-gray-800 dark:bg-gray-900">
           <div className="flex min-w-0 items-center gap-3">
             <button
@@ -781,25 +789,35 @@ export function AccountDashboard({
                 aria-label="移动端主导航"
               >
                 {navigationItems.map(
-                  ({ label, icon: Icon, active, badge, onClick }) => (
-                    <button
-                      key={label}
-                      type="button"
-                      onClick={() => void onClick()}
-                      className={`flex h-10 w-full items-center gap-3 rounded-md px-3 text-sm ${
-                        active
-                          ? "bg-blue-50 font-medium text-blue-700 dark:bg-blue-950/50 dark:text-blue-300"
-                          : "text-gray-600 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-800"
-                      }`}
-                    >
-                      <Icon className="size-4" />
-                      {label}
-                      {badge ? (
-                        <span className="ml-auto text-xs text-gray-400">
-                          {badge}
-                        </span>
+                  (
+                    { label, icon: Icon, active, badge, onClick, category },
+                    index,
+                  ) => (
+                    <div key={label}>
+                      {index === 0 ||
+                      navigationItems[index - 1]?.category !== category ? (
+                        <div className="mt-4 mb-2 px-3 text-[11px] font-semibold tracking-wide text-gray-400 uppercase first:mt-0">
+                          {category}
+                        </div>
                       ) : null}
-                    </button>
+                      <button
+                        type="button"
+                        onClick={() => void onClick()}
+                        className={`flex h-10 w-full items-center gap-3 rounded-md px-3 text-sm ${
+                          active
+                            ? "bg-blue-50 font-medium text-blue-700 dark:bg-blue-950/50 dark:text-blue-300"
+                            : "text-gray-600 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-800"
+                        }`}
+                      >
+                        <Icon className="size-4" />
+                        {label}
+                        {badge ? (
+                          <span className="ml-auto text-xs text-gray-400">
+                            {badge}
+                          </span>
+                        ) : null}
+                      </button>
+                    </div>
                   ),
                 )}
               </nav>
@@ -891,29 +909,6 @@ export function AccountDashboard({
                 />
               </div>
               <div className="flex flex-wrap gap-2">
-                <input
-                  ref={fileInputRef}
-                  type="file"
-                  accept="application/json,.json"
-                  className="hidden"
-                  onChange={(event) => {
-                    const file = event.target.files?.[0]
-                    event.target.value = ""
-                    if (file) setPendingImport(file)
-                  }}
-                />
-                <button
-                  type="button"
-                  disabled={busy}
-                  onClick={async () => {
-                    await onLoadBookmarks()
-                    setBookmarksOpen(true)
-                  }}
-                  className="flex h-9 items-center gap-2 rounded-md border border-gray-300 px-3 text-sm font-medium hover:bg-gray-50 disabled:opacity-60 dark:border-gray-700 dark:hover:bg-gray-800"
-                >
-                  <Bookmark className="size-4" />
-                  书签
-                </button>
                 <button
                   type="button"
                   disabled={busy}
@@ -1087,24 +1082,6 @@ export function AccountDashboard({
                 <button
                   type="button"
                   disabled={busy}
-                  onClick={() => fileInputRef.current?.click()}
-                  className="flex h-9 items-center gap-2 rounded-md border border-gray-300 px-3 text-sm font-medium hover:bg-gray-50 disabled:opacity-60 dark:border-gray-700 dark:hover:bg-gray-800"
-                >
-                  <Upload className="size-4" />
-                  导入
-                </button>
-                <button
-                  type="button"
-                  disabled={busy}
-                  onClick={() => void onExport()}
-                  className="flex h-9 items-center gap-2 rounded-md border border-gray-300 px-3 text-sm font-medium hover:bg-gray-50 disabled:opacity-60 dark:border-gray-700 dark:hover:bg-gray-800"
-                >
-                  <Download className="size-4" />
-                  导出
-                </button>
-                <button
-                  type="button"
-                  disabled={busy}
                   onClick={() => setAddOpen(true)}
                   className="flex h-9 items-center gap-2 rounded-md bg-blue-600 px-3 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-60"
                 >
@@ -1165,7 +1142,7 @@ export function AccountDashboard({
                 </p>
                 <p className="mt-1 text-sm text-gray-500">
                   {data.accounts.length === 0
-                    ? "添加账户或导入扩展备份以开始管理。"
+                    ? "添加账户以开始管理。"
                     : "尝试调整搜索条件。"}
                 </p>
               </div>
@@ -1445,16 +1422,6 @@ export function AccountDashboard({
         onDelete={onDeleteTag}
       />
 
-      <BookmarksDialog
-        open={bookmarksOpen}
-        busy={busy}
-        bookmarks={bookmarks}
-        tags={tags.tags}
-        onClose={() => setBookmarksOpen(false)}
-        onCreate={onCreateBookmark}
-        onUpdate={onUpdateBookmark}
-        onDelete={onDeleteBookmark}
-      />
       <SiteAnnouncementsDialog
         open={siteAnnouncementsOpen}
         busy={busy}
@@ -1586,41 +1553,6 @@ export function AccountDashboard({
         onClose={() => setPreferencesOpen(false)}
         onSave={onSavePreferences}
       />
-
-      <WebDialog
-        open={pendingImport !== null}
-        onClose={() => setPendingImport(null)}
-        title="恢复备份"
-        description={pendingImport?.name}
-        footer={
-          <>
-            <button
-              type="button"
-              onClick={() => setPendingImport(null)}
-              className="h-9 rounded-md border border-gray-300 px-4 text-sm font-medium hover:bg-gray-50 dark:border-gray-700 dark:hover:bg-gray-800"
-            >
-              取消
-            </button>
-            <button
-              type="button"
-              disabled={busy || !pendingImport}
-              onClick={async () => {
-                if (!pendingImport) return
-                await onImport(pendingImport)
-                setPendingImport(null)
-              }}
-              className="h-9 rounded-md bg-red-600 px-4 text-sm font-medium text-white hover:bg-red-700 disabled:opacity-60"
-            >
-              确认恢复
-            </button>
-          </>
-        }
-      >
-        <p className="text-sm text-gray-600 dark:text-gray-300">
-          完整 Web
-          备份会替换账户、自动化设置、历史、通知和托管站点连接；扩展备份仅替换账户。恢复前建议先导出当前完整备份。
-        </p>
-      </WebDialog>
 
       <WebDialog
         open={bulkDeleteOpen}
