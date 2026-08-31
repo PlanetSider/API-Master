@@ -12,5 +12,13 @@ test-results
 docs
 docs_assistant
 e2e
+!e2e/
+e2e/*
+!e2e/utils/
+e2e/utils/*
+!e2e/e2e-build-variants.json
+!e2e/utils/e2eBuildVariants.ts
+!e2e/utils/e2eBuildVariants.shared.js
+!e2e/utils/e2eBuildVariants.shared.d.ts
 tests
 *.log
