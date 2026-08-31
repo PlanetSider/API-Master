@@ -29,6 +29,7 @@ __pycache__/
 # local env files
 .env*.local
 /.data/
+/data/
 /secrets/*.txt
 
 out/

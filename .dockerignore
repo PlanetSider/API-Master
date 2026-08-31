@@ -1,6 +1,7 @@
 .git
 .github
 .data
+/data
 .output
 .scratch
 coverage

@@ -5,20 +5,17 @@ Web 管理系统通过普通浏览器访问，默认监听 `127.0.0.1:8787`。�
 ## Docker Compose
 
 生产 Compose 只使用 GitHub Actions 发布到 GHCR 的镜像，不在部署主机上构建源码。默认镜像为
-`ghcr.io/planetsider/api-master:latest`；建议将 `AAH_IMAGE_TAG` 固定为发布版本或提交 SHA，并在升级时显式更新。
+`ghcr.io/planetsider/api-master:latest`；建议直接修改 `compose.yaml` 的 `image` 行，将标签固定为发布版本或提交 SHA，并在升级时显式更新。
 
-创建 Compose secret 文件：
+直接编辑 `compose.yaml` 中的生产环境配置：
 
-```text
-secrets/
-├── admin_password.txt
-├── session_secret.txt
-└── encryption_key.txt
+```yaml
+AAH_WEB_ADMIN_PASSWORD: "替换为强密码"
+AAH_WEB_SESSION_SECRET: "替换为至少 32 个字符的随机值"
+AAH_WEB_ENCRYPTION_KEY: "替换为另一个至少 32 个字符的随机值"
 ```
 
-- `admin_password.txt`：Web 登录密码。
-- `session_secret.txt`：至少 32 个随机字符，用于签名登录会话。
-- `encryption_key.txt`：独立随机秘密，用于加密持久化数据。
+这三个值会出现在 Compose 文件和 `docker inspect` 输出中，请不要把替换了真实秘密的文件提交到公共仓库。
 
 然后启动：
 
@@ -27,17 +24,16 @@ docker compose pull
 docker compose up -d
 ```
 
-访问 `http://127.0.0.1:8787`。默认只绑定回环地址；需要通过反向代理访问时，由代理负责 TLS，并将 `AAH_WEB_SECURE_COOKIES` 设置为 `true`。不要直接把未启用 HTTPS 的服务暴露到公网。
+访问 `http://127.0.0.1:8787`。默认只绑定回环地址；需要通过反向代理访问时，由代理负责 TLS，并将 `compose.yaml` 中的 `AAH_WEB_SECURE_COOKIES` 改为 `"true"`。不要直接把未启用 HTTPS 的服务暴露到公网。
 
-数据存放在 `all-api-hub-data` 命名卷中。更新镜像：
+数据直接存放在 Compose 文件所在目录的 `data/` 宿主机目录中。更新镜像：
 
 ```bash
 docker compose pull
 docker compose up -d
 ```
 
-如果使用自己的 GitHub 镜像仓库，设置 `AAH_IMAGE_REPOSITORY`。私网上游默认被 SSRF 防护拒绝；服务端会在请求前解析域名，并将已验证的地址固定到 HTTP 连接，避免 DNS rebinding 在校验后改指向私网。仅在已审查网络边界后设置
-`AAH_WEB_ALLOW_PRIVATE_UPSTREAMS=true`。该开关同时影响账户请求、托管站点、模型目录、WebDAV 和外部通知目标，不能替代网络层隔离。
+如果使用自己的 GitHub 镜像仓库，请直接修改 `compose.yaml` 的 `image` 行。私网上游默认被 SSRF 防护拒绝；服务端会在请求前解析域名，并将已验证的地址固定到 HTTP 连接，避免 DNS rebinding 在校验后改指向私网。仅在已审查网络边界后，将 `compose.yaml` 中的 `AAH_WEB_ALLOW_PRIVATE_UPSTREAMS` 改为 `"true"`。该开关同时影响账户请求、托管站点、模型目录、WebDAV 和外部通知目标，不能替代网络层隔离。
 
 ## 本地开发
 

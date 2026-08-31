@@ -42,7 +42,7 @@ pnpm format:check            检查 Prettier 格式
 
 ## Web 架构与安全
 
-Web 界面只能调用类型化服务端 API，不得读取扩展存储、秘密或调用 `browser.*`/`chrome.*`。服务端负责认证、秘密处理、持久化、调度和上游请求；敏感值只在明确的单次操作中返回。所有上游地址都必须经过 SSRF 校验。Compose 镜像由 GitHub Actions 构建并发布，部署端使用版本化镜像；状态放入命名卷或外部数据库，凭据通过环境变量或 Compose secrets 提供。禁止挂载 Docker Socket。
+Web 界面只能调用类型化服务端 API，不得读取扩展存储、秘密或调用 `browser.*`/`chrome.*`。服务端负责认证、秘密处理、持久化、调度和上游请求；敏感值只在明确的单次操作中返回。所有上游地址都必须经过 SSRF 校验。Compose 镜像由 GitHub Actions 构建并发布，部署端使用版本化镜像；状态放入宿主机绑定目录、命名卷或外部数据库，凭据通过环境变量或 Compose secrets 提供。若使用 Compose 直接配置凭据，只能保留占位值，禁止提交真实密码和密钥。禁止挂载 Docker Socket。
 
 ## 提交与合并请求
 

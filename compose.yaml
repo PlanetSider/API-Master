@@ -1,45 +1,45 @@
-name: all-api-hub
-
 services:
   web:
-    image: ${AAH_IMAGE_REPOSITORY:-ghcr.io/planetsider/api-master}:${AAH_IMAGE_TAG:-latest}
+    image: ghcr.io/planetsider/api-master:latest
+    # 每次启动前检查镜像更新；生产环境可将上面的标签改为具体版本或 SHA。
     pull_policy: always
     restart: unless-stopped
+    # 使用 tini 正确转发信号并回收子进程。
     init: true
+    # 默认只允许本机访问，公网访问请配置 HTTPS 反向代理。
     ports:
-      - "${AAH_WEB_BIND_ADDRESS:-127.0.0.1}:${AAH_WEB_PORT:-8787}:8787"
+      - "127.0.0.1:8787:8787"
     environment:
+      # 生产模式会强制校验管理员密码和加密密钥。
       NODE_ENV: production
+      # 服务监听所有容器网卡，外部端口由上面的 ports 控制。
       AAH_WEB_HOST: 0.0.0.0
       AAH_WEB_PORT: 8787
+      # 数据库和静态文件在运行镜像中的路径。
       AAH_WEB_DATABASE_PATH: /data/all-api-hub.sqlite
       AAH_WEB_STATIC_DIR: /app/web
-      AAH_WEB_ADMIN_PASSWORD_FILE: /run/secrets/admin_password
-      AAH_WEB_SESSION_SECRET_FILE: /run/secrets/session_secret
-      AAH_WEB_ENCRYPTION_KEY_FILE: /run/secrets/encryption_key
-      AAH_WEB_SECURE_COOKIES: ${AAH_WEB_SECURE_COOKIES:-false}
-      AAH_WEB_ALLOW_PRIVATE_UPSTREAMS: ${AAH_WEB_ALLOW_PRIVATE_UPSTREAMS:-false}
+      # 以下三个值用于生产环境，请在部署前替换为自己的随机秘密。
+      # 直接写入 Compose 会让密码出现在配置文件和 docker inspect 中。
+      AAH_WEB_ADMIN_PASSWORD: "change-this-admin-password"
+      AAH_WEB_SESSION_SECRET: "change-this-session-secret-at-least-32-characters"
+      AAH_WEB_ENCRYPTION_KEY: "change-this-encryption-key-at-least-32-characters"
+      # 未配置 HTTPS 反向代理时保持 false；使用 HTTPS 时改为 true。
+      AAH_WEB_SECURE_COOKIES: "false"
+      # 默认禁止访问私网地址，只有审查网络边界后才改为 true。
+      AAH_WEB_ALLOW_PRIVATE_UPSTREAMS: "false"
     volumes:
-      - all-api-hub-data:/data
-    secrets:
-      - admin_password
-      - session_secret
-      - encryption_key
+      # 将数据库直接保存到 Compose 文件所在目录的 data/ 子目录。
+      # 启动前请先创建该目录，并定期备份其中的数据库文件。
+      # Linux 主机还需确保该目录对容器内 all-api-hub 用户可写。
+      - ./data:/data
+    # 根文件系统只读，仅允许 /data 和 /tmp 写入。
     read_only: true
     tmpfs:
+      # 为运行时临时文件提供内存文件系统。
       - /tmp:size=64m,mode=1777
+    # 不授予容器额外 Linux 能力。
     cap_drop:
       - ALL
+    # 禁止进程重新获取特权。
     security_opt:
       - no-new-privileges:true
-
-volumes:
-  all-api-hub-data:
-
-secrets:
-  admin_password:
-    file: ./secrets/admin_password.txt
-  session_secret:
-    file: ./secrets/session_secret.txt
-  encryption_key:
-    file: ./secrets/encryption_key.txt
