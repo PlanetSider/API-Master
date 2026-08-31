@@ -40,22 +40,7 @@ import type {
   TempWindowFetch,
   TempWindowResponseType,
 } from "~/types/tempWindowFetch"
-import {
-  isMessageReceiverUnavailableError,
-  sendTabMessageWithRetry,
-} from "~/utils/browser/browserApi"
-import {
-  addAuthMethodHeader,
-  addExtensionHeader,
-  AUTH_MODE,
-  COOKIE_AUTH_HEADER_NAME,
-  COOKIE_SESSION_OVERRIDE_HEADER_NAME,
-} from "~/utils/browser/cookieHelper"
-import {
-  normalizeHeaderInit,
-  normalizeRequestInitForMessage,
-} from "~/utils/browser/requestInitMessage"
-import { executeWithTempWindowFallback } from "~/utils/browser/tempWindowFetch"
+import { normalizeHeaderInit } from "~/utils/browser/requestInitMessage"
 import { isTestMode } from "~/utils/core/environment"
 import { getErrorMessage } from "~/utils/core/error"
 import { safeRandomUUID } from "~/utils/core/identifier"
@@ -73,6 +58,15 @@ type NonJsonFetchApiOptions = Omit<FetchApiOptions, "responseType"> & {
 }
 
 type NormalizedAuthContext = AuthConfig
+
+/** Browser-only transports are loaded lazily so Node Web workers stay runtime-neutral. */
+function hasWebExtensionRuntime(): boolean {
+  const runtime = globalThis as typeof globalThis & {
+    browser?: { runtime?: unknown }
+    chrome?: { runtime?: unknown }
+  }
+  return Boolean(runtime.browser?.runtime || runtime.chrome?.runtime)
+}
 
 interface AcquiredTransportResponse<T> extends ApiTransportResponse<T> {
   decodeError?: ApiError
@@ -289,12 +283,30 @@ const createRequestHeaders = async (
 
   let headers: Record<string, string> = { ...baseHeaders, ...userHeaders }
 
-  headers = addExtensionHeader(headers)
+  let cookieInterceptorActive = false
+  let sessionOverrideHeaderName: string | undefined
+  if (hasWebExtensionRuntime()) {
+    const cookieHelper = await import(
+      "~/services/apiTransport/browserTransportRuntime"
+    )
+    headers = cookieHelper.addExtensionHeader(headers)
 
-  if (auth.authType === AuthTypeEnum.Cookie) {
-    headers = await addAuthMethodHeader(headers, AUTH_MODE.COOKIE_AUTH_MODE)
-  } else if (auth.authType === AuthTypeEnum.AccessToken) {
-    headers = await addAuthMethodHeader(headers, AUTH_MODE.TOKEN_AUTH_MODE)
+    if (auth.authType === AuthTypeEnum.Cookie) {
+      headers = await cookieHelper.addAuthMethodHeader(
+        headers,
+        cookieHelper.AUTH_MODE.COOKIE_AUTH_MODE,
+      )
+    } else if (auth.authType === AuthTypeEnum.AccessToken) {
+      headers = await cookieHelper.addAuthMethodHeader(
+        headers,
+        cookieHelper.AUTH_MODE.TOKEN_AUTH_MODE,
+      )
+    }
+
+    cookieInterceptorActive =
+      headers[cookieHelper.COOKIE_AUTH_HEADER_NAME] ===
+      cookieHelper.AUTH_MODE.COOKIE_AUTH_MODE
+    sessionOverrideHeaderName = cookieHelper.COOKIE_SESSION_OVERRIDE_HEADER_NAME
   }
 
   if (auth.accessToken) {
@@ -308,11 +320,8 @@ const createRequestHeaders = async (
     headers["Cookie"] = auth.cookie
 
     // Preserve per-account session cookies when the Firefox interceptor is active.
-    const hasCookieInterceptorHeader =
-      COOKIE_AUTH_HEADER_NAME in headers &&
-      headers[COOKIE_AUTH_HEADER_NAME] === AUTH_MODE.COOKIE_AUTH_MODE
-    if (hasCookieInterceptorHeader) {
-      headers[COOKIE_SESSION_OVERRIDE_HEADER_NAME] = auth.cookie
+    if (cookieInterceptorActive && sessionOverrideHeaderName) {
+      headers[sessionOverrideHeaderName] = auth.cookie
     }
   }
 
@@ -396,6 +405,10 @@ async function fetchViaCurrentTabContent<T>(context: {
   onResponse: () => void
   onResponseInspectionError: () => void
 }): Promise<AcquiredTransportResponse<T>> {
+  const [browserApi, requestInitMessage] = await Promise.all([
+    import("~/services/apiTransport/browserTransportRuntime"),
+    import("~/utils/browser/requestInitMessage"),
+  ])
   const requestId = safeRandomUUID("current-tab-fetch")
   const lifecycle = observeRemoteFetchLifecycle(requestId, {
     onDispatch: context.onDispatch,
@@ -416,16 +429,21 @@ async function fetchViaCurrentTabContent<T>(context: {
   try {
     let response: unknown
     try {
-      response = await sendTabMessageWithRetry(context.fetchContext.tabId, {
-        action: RuntimeActionIds.ContentPerformTempWindowFetch,
-        requestId,
-        expectedOrigin: new URL(context.fetchContext.origin).origin,
-        fetchUrl: context.url,
-        fetchOptions: normalizeRequestInitForMessage(context.fetchOptions),
-        responseType: context.responseType,
-      })
+      response = await browserApi.sendTabMessageWithRetry(
+        context.fetchContext.tabId,
+        {
+          action: RuntimeActionIds.ContentPerformTempWindowFetch,
+          requestId,
+          expectedOrigin: new URL(context.fetchContext.origin).origin,
+          fetchUrl: context.url,
+          fetchOptions: requestInitMessage.normalizeRequestInitForMessage(
+            context.fetchOptions,
+          ),
+          responseType: context.responseType,
+        },
+      )
     } catch (error) {
-      if (!replaySafe && !isMessageReceiverUnavailableError(error)) {
+      if (!replaySafe && !browserApi.isMessageReceiverUnavailableError(error)) {
         lifecycle.markPossiblyDispatched()
       }
       throw error
@@ -601,7 +619,10 @@ const apiRequestResponse = async <T>(
   responseType: TempWindowResponseType,
   onResponse: () => void,
 ): Promise<AcquiredTransportResponse<T>> => {
-  const response = await fetch(url, options)
+  const { fetchUpstream } = await import(
+    "~/services/apiTransport/browserTransportRuntime"
+  )
+  const response = await fetchUpstream(url, options)
   onResponse()
   const contentType = response.headers.get("content-type") || ""
 
@@ -880,6 +901,9 @@ const _fetchApiWithMapper = async <T, TResult>(
               return await primaryRequest()
             }
 
+            const { executeWithTempWindowFallback } = await import(
+              "~/services/apiTransport/browserTransportRuntime"
+            )
             return await executeWithTempWindowFallback(
               {
                 ...dispatchedContext,

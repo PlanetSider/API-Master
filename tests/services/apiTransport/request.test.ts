@@ -108,6 +108,11 @@ vi.mock("~/utils/browser/browserApi", async (importOriginal) => {
   }
 })
 
+vi.mock("~/services/apiTransport/webExtensionRuntimeBridge", () => ({
+  onRuntimeMessage: mockOnRuntimeMessage,
+  sendRuntimeMessage: mockSendRuntimeMessage,
+}))
+
 vi.mock("~/services/permissions/permissionManager", () => ({
   COOKIE_INTERCEPTOR_PERMISSIONS: [
     "cookies",

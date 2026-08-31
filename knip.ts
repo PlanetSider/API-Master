@@ -17,6 +17,10 @@ const config: KnipConfig = {
     "src/entrypoints/options/main.tsx",
     "src/entrypoints/popup/main.tsx",
     "src/entrypoints/sidepanel/main.tsx",
+    // The standalone Web server and browser client are first-class runtime
+    // entrypoints alongside the WXT extension entrypoints.
+    "server/index.ts",
+    "web/main.tsx",
     // WXT discovers this local build module from the configured modulesDir.
     "src/locales/runtime-assets.ts",
     "tests/**/*.test.{ts,tsx}",
@@ -29,6 +33,8 @@ const config: KnipConfig = {
   ],
   project: [
     "src/**/*.{ts,tsx}",
+    "server/**/*.{ts,tsx}",
+    "web/**/*.{ts,tsx}",
     "tests/**/*.{ts,tsx}",
     "e2e/**/*.{ts,tsx}",
     "scripts/**/*.{js,mjs}",
@@ -57,6 +63,20 @@ const config: KnipConfig = {
     "src/features/**/components/**": ["exports", "types", "duplicates"],
     "src/features/ManagedSiteVerification/NewApiManagedVerificationDialog.tsx":
       ["exports", "types", "duplicates"],
+
+    // Web server compatibility modules are selected through Vite aliases and
+    // are not reachable from the extension entrypoint graph.
+    "server/browserTransportRuntime.ts": ["files", "exports", "types"],
+    "server/extensionAccountStorageUnavailable.ts": ["files", "exports"],
+    "server/webExtensionUnavailable.ts": ["files", "exports", "types"],
+
+    // Service classes expose typed contracts for integration consumers and
+    // tests even when the concrete runtime only imports their implementations.
+    "server/**/*.ts": ["types"],
+    "server/accountsRepository.ts": ["exports"],
+    "server/accountFactory.ts": ["exports"],
+    "src/services/apiTransport/browserTransportRuntime.ts": ["exports"],
+    "src/web/contracts.ts": ["types"],
 
     // Utility entrypoints often carry semantic names even when current callers
     // are sparse.

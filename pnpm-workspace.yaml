@@ -1,0 +1,9 @@
+allowBuilds:
+  "@swc/core": false
+  core-js: false
+  electron: true
+  esbuild: true
+  msw: false
+  spawn-sync: false
+overrides:
+  "@vitejs/plugin-react": 5.1.1

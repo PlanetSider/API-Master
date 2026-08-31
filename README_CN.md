@@ -53,7 +53,23 @@
 - ✅ **福利易漏**：每日签到送额度，但手动处理容易忘。
 - 🔌 **配置繁琐**：API 信息要反复复制到 cc-switch、Cherry Studio 等工具里。
 
-**All API Hub 就是你的 AI 资产管家**：填入站点地址，剩下的交给插件处理。
+**All API Hub 就是你的 AI 资产管家**：可以直接在浏览器打开自托管 Web 管理系统，也可以继续使用扩展处理浏览器专属流程。
+
+<a id="web-management"></a>
+## 🌐 浏览器 Web 管理系统
+
+项目现已支持通过 Docker Compose 启动、浏览器直接访问的自托管管理系统。服务端负责账户、凭据、模型、密钥、托管站点、历史、通知、自动化和备份，数据以加密 SQLite 持久化；扩展继续作为迁移期兼容入口。
+
+```bash
+mkdir -p secrets
+openssl rand -base64 32 > secrets/session_secret.txt
+openssl rand -base64 32 > secrets/encryption_key.txt
+printf '请替换为强密码' > secrets/admin_password.txt
+docker compose pull
+docker compose up -d
+```
+
+然后访问 `http://127.0.0.1:8787`。生产环境请固定 `AAH_IMAGE_TAG` 到版本或提交 SHA，并通过 HTTPS 反向代理暴露服务。完整配置和迁移说明见 [Web 管理系统部署文档](./docs/web-deployment.md)。
 
 <a id="features"></a>
 ## ✨ 它能为你做什么？

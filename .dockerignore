@@ -1,0 +1,16 @@
+.git
+.github
+.data
+.output
+.scratch
+coverage
+diagnostics-results
+node_modules
+playwright-report
+secrets
+test-results
+docs
+docs_assistant
+e2e
+tests
+*.log

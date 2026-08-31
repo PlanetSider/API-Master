@@ -1,9 +1,9 @@
 import { RuntimeActionIds } from "~/constants/runtimeActions"
-import type { ApiTransportRemoteLifecycleObserver } from "~/types/tempWindowFetch"
 import {
   onRuntimeMessage,
   sendRuntimeMessage,
-} from "~/utils/browser/browserApi"
+} from "~/services/apiTransport/webExtensionRuntimeBridge"
+import type { ApiTransportRemoteLifecycleObserver } from "~/types/tempWindowFetch"
 
 interface RemoteFetchLifecycleResult {
   transportLifecycle?: unknown
@@ -134,10 +134,12 @@ export function observeRemoteFetchLifecycle(
     notifyObserver(observer.onResponse)
   }
   const disposeRuntimeListener = onRuntimeMessage((message) => {
+    if (!message || typeof message !== "object") return
+    const payload = message as { action?: unknown; requestId?: unknown }
     if (
-      message?.action === RuntimeActionIds.ApiTransportRemoteFetchDispatched &&
-      isRemoteFetchRequestId(message?.requestId) &&
-      message?.requestId === requestId
+      payload.action === RuntimeActionIds.ApiTransportRemoteFetchDispatched &&
+      isRemoteFetchRequestId(payload.requestId) &&
+      payload.requestId === requestId
     ) {
       notifyDispatch()
     }

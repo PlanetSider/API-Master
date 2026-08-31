@@ -72,6 +72,13 @@ export type ApiServiceAccountRequest = ApiServiceRequest & {
    * Default: true (when undefined).
    */
   includeTodayCashflow?: boolean
+  /**
+   * Whether refresh should also probe the selected automatic check-in method.
+   * Web server refreshes disable this until browser-assisted check-in providers
+   * have an explicit server runtime contract.
+   * Default: true (when undefined).
+   */
+  includeCheckInStatus?: boolean
 }
 
 type RefreshAuthUpdate = {

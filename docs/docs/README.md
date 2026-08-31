@@ -3,7 +3,7 @@ home: true
 title: "首页"
 heroImage: "/512.png"
 heroText: "All API Hub - 你的全能 AI 资产管家"
-tagline: "开源浏览器插件，统一管理第三方 AI 聚合中转站与自建 New API：自动识别账号、比对模型价格、验证 API/CLI 兼容性、同步模型与渠道，并支持跨平台与加密 WebDAV 备份"
+tagline: "开源浏览器插件与自托管 Web 管理系统，统一管理第三方 AI 聚合中转站与自建 New API：比对模型价格、验证 API/CLI 兼容性、同步模型与渠道，并支持跨平台与加密备份"
 actions:
   - text: "🚀 开始使用"
     link: "./get-started.html"
@@ -53,6 +53,10 @@ footer: "AGPL-3.0 Licensed | Copyright 2025-present All API Hub"
 在 AI 时代，为了省钱或体验不同模型，我们往往拥有多个中转站账号。但管理起来却很头疼：余额分散、价格混乱、每天手动签到太累...
 
 **All API Hub 为解决这些问题而生。** 它是你的 AI 资产中心，让管理变得简单、直观且自动化。
+
+### 🌐 直接浏览器访问
+
+除浏览器扩展外，项目提供通过 Docker Compose 部署的 Web 管理系统。启动后访问 `http://127.0.0.1:8787` 即可管理账户、凭据、模型、密钥、托管站点、历史、通知、自动化和备份。请先阅读 [Web 管理系统部署](../../docs/web-deployment.md)；需要当前标签页、Cookie 注入、WAF 或 Turnstile 的浏览器专属流程仍由扩展或独立浏览器工作节点处理。
 
 ## 🎯 你的使用场景
 

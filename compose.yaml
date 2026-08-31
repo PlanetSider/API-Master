@@ -1,0 +1,45 @@
+name: all-api-hub
+
+services:
+  web:
+    image: ${AAH_IMAGE_REPOSITORY:-ghcr.io/planetsider/api-master}:${AAH_IMAGE_TAG:-latest}
+    pull_policy: always
+    restart: unless-stopped
+    init: true
+    ports:
+      - "${AAH_WEB_BIND_ADDRESS:-127.0.0.1}:${AAH_WEB_PORT:-8787}:8787"
+    environment:
+      NODE_ENV: production
+      AAH_WEB_HOST: 0.0.0.0
+      AAH_WEB_PORT: 8787
+      AAH_WEB_DATABASE_PATH: /data/all-api-hub.sqlite
+      AAH_WEB_STATIC_DIR: /app/web
+      AAH_WEB_ADMIN_PASSWORD_FILE: /run/secrets/admin_password
+      AAH_WEB_SESSION_SECRET_FILE: /run/secrets/session_secret
+      AAH_WEB_ENCRYPTION_KEY_FILE: /run/secrets/encryption_key
+      AAH_WEB_SECURE_COOKIES: ${AAH_WEB_SECURE_COOKIES:-false}
+      AAH_WEB_ALLOW_PRIVATE_UPSTREAMS: ${AAH_WEB_ALLOW_PRIVATE_UPSTREAMS:-false}
+    volumes:
+      - all-api-hub-data:/data
+    secrets:
+      - admin_password
+      - session_secret
+      - encryption_key
+    read_only: true
+    tmpfs:
+      - /tmp:size=64m,mode=1777
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+
+volumes:
+  all-api-hub-data:
+
+secrets:
+  admin_password:
+    file: ./secrets/admin_password.txt
+  session_secret:
+    file: ./secrets/session_secret.txt
+  encryption_key:
+    file: ./secrets/encryption_key.txt

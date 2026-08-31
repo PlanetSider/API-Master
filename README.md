@@ -54,7 +54,23 @@ But once you have multiple accounts, management quickly becomes painful:
 - ✅ **Missed daily perks**: Manual daily check-ins are easy to forget.
 - 🔌 **Annoying setup work**: API details must be copied into tools such as cc-switch and Cherry Studio again and again.
 
-**All API Hub is your AI asset manager**: add your site URLs and let the extension handle the rest.
+**All API Hub is your AI asset manager**: open the self-hosted Web management system in a browser, or use the extension for browser-only workflows.
+
+<a id="web-management"></a>
+## 🌐 Browser Web Management
+
+The project now supports a self-hosted management system served through Docker Compose and opened directly in a browser. The server manages accounts, credentials, models, keys, managed sites, history, notifications, automation, and backups in encrypted SQLite storage; the extension remains available as a migration-compatible entry point.
+
+```bash
+mkdir -p secrets
+openssl rand -base64 32 > secrets/session_secret.txt
+openssl rand -base64 32 > secrets/encryption_key.txt
+printf 'replace-with-a-strong-password' > secrets/admin_password.txt
+docker compose pull
+docker compose up -d
+```
+
+Open `http://127.0.0.1:8787`. For production, pin `AAH_IMAGE_TAG` to a release or commit SHA and expose the service through an HTTPS reverse proxy. See the [Web deployment guide](./docs/web-deployment.md) for configuration and migration details.
 
 <a id="features"></a>
 ## ✨ What Can It Do for You?
