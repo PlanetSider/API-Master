@@ -16,6 +16,7 @@ import {
   LayoutDashboard,
   LogOut,
   Menu,
+  Palette,
   Pencil,
   Pin,
   Plus,
@@ -263,6 +264,7 @@ const getHealthPresentation = (account: WebAccountSummary) => {
 type DashboardPage =
   | "overview"
   | "accounts"
+  | "basicSettings"
   | "usageAnalytics"
   | "siteAnnouncements"
   | "models"
@@ -276,6 +278,7 @@ type DashboardPage =
 const dashboardPages: Record<DashboardPage, string> = {
   overview: "overview",
   accounts: "accounts",
+  basicSettings: "basic",
   usageAnalytics: "usage-analytics",
   siteAnnouncements: "site-announcements",
   models: "models",
@@ -306,6 +309,114 @@ interface OverviewPageProps {
   usageHistory: WebUsageHistoryResponse | null
   runtimeCapabilities: WebRuntimeCapabilitiesResponse | null
   onNavigate: (page: DashboardPage) => void
+}
+
+interface BasicSettingsPageProps {
+  preferences: WebPreferencesResponse | null | undefined
+  onNavigate: (page: DashboardPage) => void
+}
+
+function BasicSettingsPage({
+  preferences,
+  onNavigate,
+}: BasicSettingsPageProps) {
+  const cards = [
+    {
+      title: "显示偏好",
+      description: "主题、金额单位、账户排序和健康状态显示。",
+      page: "preferences" as const,
+      icon: Palette,
+      detail: preferences
+        ? `${preferences.preferences.currencyType} · ${preferences.preferences.themeMode === "system" ? "跟随系统" : preferences.preferences.themeMode === "dark" ? "深色" : "浅色"}`
+        : "尚未加载",
+    },
+    {
+      title: "自动刷新",
+      description: "配置账户刷新、签到、用量历史和公告检查。",
+      page: "automation" as const,
+      icon: TimerReset,
+      detail: "服务端调度",
+    },
+    {
+      title: "外部通知",
+      description: "连接 Telegram、飞书、钉钉或 Webhook 通知渠道。",
+      page: "externalNotifications" as const,
+      icon: Bell,
+      detail: "可选配置",
+    },
+    {
+      title: "运行能力",
+      description: "查看服务端和浏览器工作节点可执行的流程。",
+      page: "runtimeCapabilities" as const,
+      icon: Activity,
+      detail: "能力诊断",
+    },
+  ]
+
+  return (
+    <div className="space-y-8">
+      <div className="[container-type:inline-size]">
+        <div className="flex items-start gap-3">
+          <Settings2 className="mt-1 size-6 shrink-0 text-blue-600 dark:text-blue-400" />
+          <div className="min-w-0">
+            <h1 className="text-2xl font-semibold tracking-tight text-gray-900 dark:text-white">
+              基础设置
+            </h1>
+            <p className="mt-2 text-sm text-gray-600 dark:text-gray-300">
+              集中管理 Web 控制台的显示、自动化和通知配置。
+            </p>
+          </div>
+        </div>
+      </div>
+
+      <section aria-labelledby="basic-settings-sections">
+        <div className="mb-4 flex items-center justify-between gap-3">
+          <h2
+            id="basic-settings-sections"
+            className="text-sm font-semibold text-gray-900 dark:text-white"
+          >
+            设置项
+          </h2>
+          <span className="text-xs text-gray-500 dark:text-gray-400">
+            选择一项继续
+          </span>
+        </div>
+        <div className="grid gap-4 md:grid-cols-2">
+          {cards.map(({ title, description, page, icon: Icon, detail }) => (
+            <button
+              key={title}
+              type="button"
+              onClick={() => onNavigate(page)}
+              className="group flex min-h-28 items-start gap-4 rounded-xl border border-gray-200 bg-white p-4 text-left shadow-sm transition-colors hover:border-blue-300 hover:bg-blue-50/40 dark:border-gray-700 dark:bg-gray-900 dark:hover:border-blue-700 dark:hover:bg-blue-950/20"
+            >
+              <span className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-blue-50 text-blue-600 dark:bg-blue-950/50 dark:text-blue-300">
+                <Icon className="size-5" />
+              </span>
+              <span className="min-w-0 flex-1">
+                <span className="flex items-center justify-between gap-3">
+                  <span className="truncate text-sm font-semibold text-gray-900 dark:text-white">
+                    {title}
+                  </span>
+                  <ChevronsRight className="size-4 shrink-0 text-gray-300 transition-colors group-hover:text-blue-600 dark:text-gray-600" />
+                </span>
+                <span className="mt-1 block text-xs leading-5 text-gray-500 dark:text-gray-400">
+                  {description}
+                </span>
+                <span className="mt-2 block text-xs font-medium text-blue-600 dark:text-blue-400">
+                  {detail}
+                </span>
+              </span>
+            </button>
+          ))}
+        </div>
+      </section>
+
+      <div className="rounded-xl border border-blue-100 bg-blue-50/50 px-4 py-3 text-sm leading-6 text-blue-900 dark:border-blue-900/60 dark:bg-blue-950/20 dark:text-blue-100">
+        Web 配置保存在服务端。涉及浏览器页面会话、WAF 或 Turnstile
+        的能力，请在“运行能力”中确认工作节点状态。
+      </div>
+    </div>
+  )
 }
 
 function OverviewPage({
@@ -421,14 +532,14 @@ function OverviewPage({
   ]
 
   return (
-    <div className="space-y-6 p-1 sm:p-1" data-testid="web-options-overview">
+    <div className="space-y-6" data-testid="web-options-overview">
       <div className="flex items-start gap-3">
-        <div className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-blue-50 text-blue-600 dark:bg-blue-950/50 dark:text-blue-300">
-          <LayoutDashboard className="size-5" />
-        </div>
-        <div>
-          <h1 className="text-xl font-semibold tracking-tight">账户总览</h1>
-          <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
+        <LayoutDashboard className="mt-1 size-6 shrink-0 text-blue-600 dark:text-blue-400" />
+        <div className="min-w-0">
+          <h1 className="text-2xl font-semibold tracking-tight text-gray-900 dark:text-white">
+            账户总览
+          </h1>
+          <p className="mt-2 text-sm text-gray-600 dark:text-gray-300">
             汇总账户、用量、自动化与系统配置状态。
           </p>
         </div>
@@ -802,6 +913,18 @@ export function AccountDashboard({
     }
   }, [])
 
+  useEffect(() => {
+    if (mobileNavOpen) {
+      document.body.style.overflow = "hidden"
+    } else {
+      document.body.style.overflow = ""
+    }
+
+    return () => {
+      document.body.style.overflow = ""
+    }
+  }, [mobileNavOpen])
+
   const navigateToPage = (page: DashboardPage) => {
     const hash = `#${dashboardPages[page]}`
     if (window.location.hash !== hash) {
@@ -1009,6 +1132,13 @@ export function AccountDashboard({
       onClick: () => navigateToPage("automation"),
     },
     {
+      label: "基础设置",
+      icon: Settings2,
+      category: "系统",
+      page: "basicSettings",
+      onClick: () => navigateToPage("basicSettings"),
+    },
+    {
       label: "运行能力",
       icon: Activity,
       category: "系统",
@@ -1174,11 +1304,10 @@ export function AccountDashboard({
               </button>
               <button
                 type="button"
-                aria-label="显示偏好"
-                title="显示偏好"
-                onClick={async () => {
-                  navigateToPage("preferences")
-                  await onLoadPreferences()
+                aria-label="基础设置"
+                title="基础设置"
+                onClick={() => {
+                  navigateToPage("basicSettings")
                 }}
                 className="hidden size-9 items-center justify-center rounded-lg text-gray-600 hover:bg-gray-100 sm:flex dark:text-gray-300 dark:hover:bg-gray-800"
               >
@@ -1297,8 +1426,14 @@ export function AccountDashboard({
           className={`min-w-0 flex-1 ${sidebarCollapsed ? "md:pl-16" : "md:pl-64"}`}
         >
           <main className="mx-auto w-full max-w-7xl px-2 py-3 sm:px-4 sm:py-5 md:px-6 md:py-6">
-            <div className="min-h-[400px] overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm dark:border-gray-800 dark:bg-gray-900">
-              <div className="space-y-5 p-3 sm:p-5 md:p-6">
+            <div className="min-h-[400px] overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm md:min-h-[600px] dark:border-gray-800 dark:bg-gray-900">
+              <div
+                className={
+                  activePage === "overview" || activePage === "accounts"
+                    ? "space-y-5 p-4 sm:p-6 md:p-8"
+                    : "p-4 sm:p-6 md:p-8"
+                }
+              >
                 {activePage === "overview" ? (
                   <OverviewPage
                     activeAccounts={activeAccounts}
@@ -1312,16 +1447,14 @@ export function AccountDashboard({
                     onNavigate={navigateToPage}
                   />
                 ) : activePage === "accounts" ? (
-                  <>
+                  <div className="space-y-6">
                     <div className="flex items-start gap-3">
-                      <div className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-blue-50 text-blue-600 dark:bg-blue-950/50 dark:text-blue-300">
-                        <Users className="size-5" />
-                      </div>
-                      <div>
-                        <h1 className="text-xl font-semibold tracking-tight">
+                      <Users className="mt-1 size-6 shrink-0 text-blue-600 dark:text-blue-400" />
+                      <div className="min-w-0">
+                        <h1 className="text-2xl font-semibold tracking-tight text-gray-900 dark:text-white">
                           账户管理
                         </h1>
-                        <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
+                        <p className="mt-2 text-sm text-gray-600 dark:text-gray-300">
                           管理站点账户、余额、健康状态和访问密钥。
                         </p>
                       </div>
@@ -1923,7 +2056,12 @@ export function AccountDashboard({
                         </div>
                       )}
                     </section>
-                  </>
+                  </div>
+                ) : activePage === "basicSettings" ? (
+                  <BasicSettingsPage
+                    preferences={preferences}
+                    onNavigate={navigateToPage}
+                  />
                 ) : (
                   <WebDialogInlineProvider>
                     {activePage === "usageAnalytics" ? (

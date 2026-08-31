@@ -247,6 +247,20 @@ describe("AccountDashboard mobile navigation", () => {
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument()
   })
 
+  it("exposes the upstream basic settings page in the system section", async () => {
+    const user = userEvent.setup()
+    render(<AccountDashboard {...createProps()} />)
+
+    await user.click(screen.getAllByRole("button", { name: "基础设置" })[0]!)
+
+    expect(window.location.hash).toBe("#basic")
+    expect(
+      screen.getByRole("heading", { name: "基础设置" }),
+    ).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: "显示偏好" })).toBeInTheDocument()
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument()
+  })
+
   it("does not expose bookmark or data migration entries", async () => {
     const user = userEvent.setup()
     render(<AccountDashboard {...createProps()} />)

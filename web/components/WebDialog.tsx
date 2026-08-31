@@ -1,4 +1,17 @@
-import { X } from "lucide-react"
+import {
+  Activity,
+  Bell,
+  Boxes,
+  ChartNoAxesCombined,
+  KeyRound,
+  Palette,
+  ServerCog,
+  Settings2,
+  ShieldCheck,
+  TimerReset,
+  X,
+  type LucideIcon,
+} from "lucide-react"
 import {
   createContext,
   useContext,
@@ -25,6 +38,21 @@ interface WebDialogProps {
   children: ReactNode
   footer?: ReactNode
   onClose: () => void
+}
+
+const inlineTitleIcons: Record<string, LucideIcon> = {
+  用量分析: ChartNoAxesCombined,
+  网站公告: Bell,
+  模型总览: Boxes,
+  自动刷新: TimerReset,
+  运行能力: Activity,
+  外部通知: Bell,
+  "API 凭据库": KeyRound,
+  "API 检测": ShieldCheck,
+  显示偏好: Palette,
+  "WebDAV 设置": ServerCog,
+  托管站点: ServerCog,
+  通知中心: Bell,
 }
 
 export function WebDialog({
@@ -62,6 +90,7 @@ export function WebDialog({
   if (!open) return null
 
   if (inline) {
+    const Icon = inlineTitleIcons[title] ?? Settings2
     return (
       <div
         ref={panelRef}
@@ -70,24 +99,30 @@ export function WebDialog({
         tabIndex={-1}
         className="w-full outline-none"
       >
-        <div className="border-b border-gray-200 px-4 py-5 sm:px-6 dark:border-gray-700">
-          <div className="min-w-0">
-            <h2 id={titleId} className="text-xl font-semibold tracking-tight">
-              {title}
-            </h2>
-            {description ? (
-              <p
-                id={descriptionId}
-                className="mt-1 text-sm text-gray-500 dark:text-gray-400"
+        <div className="[container-type:inline-size] mb-8">
+          <div className="flex flex-col gap-2 [@container(min-width:42rem)]:flex-row [@container(min-width:42rem)]:items-start [@container(min-width:42rem)]:justify-between [@container(min-width:42rem)]:gap-4">
+            <div className="flex min-w-0 items-center gap-3">
+              <Icon className="size-6 shrink-0 text-blue-600 dark:text-blue-400" />
+              <h1
+                id={titleId}
+                className="min-w-0 text-2xl font-semibold tracking-tight text-gray-900 dark:text-white"
               >
-                {description}
-              </p>
-            ) : null}
+                {title}
+              </h1>
+            </div>
           </div>
+          {description ? (
+            <p
+              id={descriptionId}
+              className="mt-2 text-sm text-gray-600 dark:text-gray-300"
+            >
+              {description}
+            </p>
+          ) : null}
         </div>
-        <div className="px-4 py-5 sm:px-6">{children}</div>
+        <div className="min-w-0">{children}</div>
         {footer ? (
-          <div className="flex flex-wrap justify-end gap-2 border-t border-gray-200 px-4 py-4 sm:px-6 dark:border-gray-700">
+          <div className="mt-8 flex flex-wrap justify-end gap-2 border-t border-gray-200 pt-4 dark:border-gray-700">
             {footer}
           </div>
         ) : null}
