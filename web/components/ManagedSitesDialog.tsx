@@ -20,6 +20,7 @@ interface Props {
   busy: boolean
   connections: WebManagedSiteConnectionListResponse | null
   channels: WebManagedChannelListResponse | null
+  title?: string
   onClose: () => void
   onCreate: (input: WebManagedSiteConnectionInput) => Promise<void>
   onLoadChannels: (id: string) => Promise<void>
@@ -124,7 +125,7 @@ export function ManagedSitesDialog(props: Props) {
       <WebDialog
         open={props.open}
         onClose={props.onClose}
-        title="托管站点"
+        title={props.title ?? "托管站点"}
         description="管理员凭据加密保存在服务端，不会返回到连接列表。"
       >
         <form onSubmit={submit} className="grid gap-2 sm:grid-cols-2">

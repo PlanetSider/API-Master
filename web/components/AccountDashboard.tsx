@@ -3,15 +3,16 @@ import {
   ArrowDown,
   ArrowUp,
   Bell,
+  Bookmark,
   Boxes,
   CalendarCheck2,
   ChartNoAxesCombined,
   ChevronsLeft,
   ChevronsRight,
-  CircleDollarSign,
   Cloud,
   Database,
   History,
+  Info,
   KeyRound,
   LayoutDashboard,
   LogOut,
@@ -33,13 +34,14 @@ import {
   X,
   type LucideIcon,
 } from "lucide-react"
-import { useEffect, useMemo, useRef, useState } from "react"
+import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 
 import iconImage from "~/assets/icon.png"
 import { Checkbox } from "~/components/ui"
 import { SiteHealthStatus } from "~/types"
 import type {
   WebAccountBulkAction,
+  WebAccountCheckInStatus,
   WebAccountDetectionInput,
   WebAccountDetectionResponse,
   WebAccountListResponse,
@@ -58,7 +60,12 @@ import type {
   WebApiVerificationResponse,
   WebAutomationSettingsPatch,
   WebAutomationSettingsResponse,
+  WebBackup,
   WebBalanceHistoryResponse,
+  WebBookmarkCreateInput,
+  WebBookmarkListResponse,
+  WebBookmarkPatchInput,
+  WebBookmarkSummary,
   WebChannelConfigPatch,
   WebChannelConfigResponse,
   WebCreateAccountInput,
@@ -88,12 +95,15 @@ import type {
   WebUsageHistoryResponse,
 } from "~/web/contracts"
 
+import { AboutPage } from "./AboutPage"
 import { AccountFormDialog } from "./AccountFormDialog"
 import { AllModelCatalogDialog } from "./AllModelCatalogDialog"
 import { AutomationSettingsDialog } from "./AutomationSettingsDialog"
 import { BalanceHistoryDialog } from "./BalanceHistoryDialog"
+import { BookmarksDialog } from "./BookmarksDialog"
 import { CredentialProfilesDialog } from "./CredentialProfilesDialog"
 import { ExternalNotificationSettingsDialog } from "./ExternalNotificationSettingsDialog"
+import { ImportExportPage } from "./ImportExportPage"
 import { KeyManagementDialog } from "./KeyManagementDialog"
 import { ManagedSitesDialog } from "./ManagedSitesDialog"
 import { ModelCatalogDialog } from "./ModelCatalogDialog"
@@ -110,6 +120,7 @@ import { WebDialog, WebDialogInlineProvider } from "./WebDialog"
 
 interface AccountDashboardProps {
   data: WebAccountListResponse
+  bookmarks?: WebBookmarkListResponse | null
   tags: WebTagListResponse
   siteAnnouncements: WebSiteAnnouncementListResponse
   automation: WebAutomationSettingsResponse | null
@@ -132,6 +143,10 @@ interface AccountDashboardProps {
   busy: boolean
   message: { kind: "error" | "success"; text: string } | null
   onCreate: (input: WebCreateAccountInput) => Promise<void>
+  onLoadBookmarks?: () => Promise<void>
+  onCreateBookmark?: (input: WebBookmarkCreateInput) => Promise<void>
+  onUpdateBookmark?: (id: string, input: WebBookmarkPatchInput) => Promise<void>
+  onDeleteBookmark?: (bookmark: WebBookmarkSummary) => Promise<void>
   onDetectAccount?: (
     input: WebAccountDetectionInput,
   ) => Promise<WebAccountDetectionResponse>
@@ -221,6 +236,10 @@ interface AccountDashboardProps {
   onTestWebDav: () => Promise<void>
   onUploadWebDavBackup: () => Promise<void>
   onRestoreWebDavBackup: () => Promise<void>
+  onExportBackup?: () => Promise<WebBackup>
+  onExportAccounts?: () => Promise<unknown>
+  onImportAccounts?: (data: unknown) => Promise<void>
+  onRestoreBackup?: (backup: WebBackup) => Promise<void>
   onLoadExternalNotifications: () => Promise<void>
   onSaveExternalNotifications: (
     input: WebExternalNotificationSettingsInput,
@@ -261,10 +280,45 @@ const getHealthPresentation = (account: WebAccountSummary) => {
   return { label: "待检测", className: "bg-amber-100 text-amber-700" }
 }
 
+type AccountRefreshFilter =
+  | "never-synced"
+  | "healthy"
+  | "warning"
+  | "error"
+  | "unknown"
+
+const getAccountRefreshFilter = (
+  account: WebAccountSummary,
+): AccountRefreshFilter => {
+  if (!Number.isFinite(account.lastSyncTime) || account.lastSyncTime <= 0) {
+    return "never-synced"
+  }
+  return account.health.status
+}
+
+const getAccountCheckInFilter = (
+  account: WebAccountSummary,
+): WebAccountCheckInStatus => account.checkInStatus ?? "status-unavailable"
+
+const accountCheckInFilterLabels: Record<WebAccountCheckInStatus, string> = {
+  "checked-in": "已签到",
+  "not-checked-in": "未签到",
+  outdated: "状态过期",
+  "status-unavailable": "状态不可读取",
+  unsupported: "不支持",
+}
+
 type DashboardPage =
   | "overview"
   | "accounts"
+  | "bookmarks"
   | "basicSettings"
+  | "balanceHistory"
+  | "keys"
+  | "managedSiteChannels"
+  | "managedSiteModelSync"
+  | "importExport"
+  | "about"
   | "usageAnalytics"
   | "siteAnnouncements"
   | "models"
@@ -277,15 +331,22 @@ type DashboardPage =
 
 const dashboardPages: Record<DashboardPage, string> = {
   overview: "overview",
-  accounts: "accounts",
+  accounts: "account",
+  bookmarks: "bookmark",
   basicSettings: "basic",
-  usageAnalytics: "usage-analytics",
-  siteAnnouncements: "site-announcements",
+  balanceHistory: "balanceHistory",
+  keys: "keys",
+  managedSiteChannels: "managedSiteChannels",
+  managedSiteModelSync: "managedSiteModelSync",
+  importExport: "importExport",
+  about: "about",
+  usageAnalytics: "usageAnalytics",
+  siteAnnouncements: "siteAnnouncements",
   models: "models",
-  automation: "automation",
+  automation: "autoCheckin",
   runtimeCapabilities: "runtime-capabilities",
   externalNotifications: "external-notifications",
-  credentialProfiles: "credential-profiles",
+  credentialProfiles: "apiCredentialProfiles",
   apiCheck: "api-check",
   preferences: "preferences",
 }
@@ -296,7 +357,23 @@ const pageFromHash = (): DashboardPage => {
   const entry = Object.entries(dashboardPages).find(
     ([, value]) => value === hash,
   )
-  return (entry?.[0] as DashboardPage | undefined) ?? "overview"
+  if (entry) return entry[0] as DashboardPage
+
+  const legacyHashes: Record<string, DashboardPage> = {
+    accounts: "accounts",
+    bookmarks: "bookmarks",
+    "balance-history": "balanceHistory",
+    "managed-site-channels": "managedSiteChannels",
+    "managed-site-model-sync": "managedSiteModelSync",
+    "import-export": "importExport",
+    "usage-analytics": "usageAnalytics",
+    "site-announcements": "siteAnnouncements",
+    "credential-profiles": "credentialProfiles",
+    automation: "automation",
+  }
+  const legacyPage = legacyHashes[hash]
+  if (legacyPage) return legacyPage
+  return "overview"
 }
 
 interface OverviewPageProps {
@@ -320,6 +397,24 @@ function BasicSettingsPage({
   preferences,
   onNavigate,
 }: BasicSettingsPageProps) {
+  const settingsTabs: Array<{
+    label: string
+    page?: DashboardPage
+    status?: string
+  }> = [
+    { label: "通用", page: "preferences" },
+    { label: "通知", page: "externalNotifications" },
+    { label: "账号管理", page: "accounts" },
+    { label: "数据刷新", page: "automation" },
+    { label: "签到与兑换", page: "automation" },
+    { label: "余额历史", page: "balanceHistory" },
+    { label: "账号用量", page: "usageAnalytics" },
+    { label: "AI API 测试", page: "apiCheck" },
+    { label: "自建 AI 网关", page: "managedSiteChannels" },
+    { label: "CLIProxyAPI", status: "Web 端暂未提供" },
+    { label: "Claude Code Router", status: "Web 端暂未提供" },
+    { label: "数据与备份", page: "importExport" },
+  ]
   const cards = [
     {
       title: "显示偏好",
@@ -332,7 +427,7 @@ function BasicSettingsPage({
     },
     {
       title: "自动刷新",
-      description: "配置账户刷新、签到、用量历史和公告检查。",
+      description: "配置账户自动刷新和失败重试策略。",
       page: "automation" as const,
       icon: TimerReset,
       detail: "服务端调度",
@@ -351,6 +446,41 @@ function BasicSettingsPage({
       icon: Activity,
       detail: "能力诊断",
     },
+    {
+      title: "API 检测",
+      description: "验证 API 地址、密钥和模型的连通性。",
+      page: "apiCheck" as const,
+      icon: ShieldCheck,
+      detail: "连接测试",
+    },
+    {
+      title: "账户管理",
+      description: "账户排序、添加时自动填充和重复账户提醒。",
+      page: "accounts" as const,
+      icon: Users,
+      detail: "账户偏好",
+    },
+    {
+      title: "余额历史",
+      description: "余额快照采集与历史数据保留策略。",
+      page: "balanceHistory" as const,
+      icon: History,
+      detail: "数据采集",
+    },
+    {
+      title: "用量历史",
+      description: "消费日志同步和聚合统计设置。",
+      page: "usageAnalytics" as const,
+      icon: ChartNoAxesCombined,
+      detail: "同步设置",
+    },
+    {
+      title: "网站公告",
+      description: "公告检查频率和未读通知显示。",
+      page: "siteAnnouncements" as const,
+      icon: Bell,
+      detail: "公告设置",
+    },
   ]
 
   return (
@@ -360,16 +490,34 @@ function BasicSettingsPage({
           <Settings2 className="mt-1 size-6 shrink-0 text-blue-600 dark:text-blue-400" />
           <div className="min-w-0">
             <h1 className="text-2xl font-semibold tracking-tight text-gray-900 dark:text-white">
-              基础设置
+              设置
             </h1>
             <p className="mt-2 text-sm text-gray-600 dark:text-gray-300">
-              集中管理 Web 控制台的显示、自动化和通知配置。
+              管理 Web 控制台的基本配置选项。
             </p>
           </div>
         </div>
       </div>
 
       <section aria-labelledby="basic-settings-sections">
+        <div className="-mx-1 mb-6 overflow-x-auto border-b border-gray-200 dark:border-gray-700">
+          <div className="flex min-w-max gap-1 px-1">
+            {settingsTabs.map(({ label, page, status }, index) => (
+              <button
+                key={`${label}-${index}`}
+                type="button"
+                onClick={() => {
+                  if (page) onNavigate(page)
+                }}
+                disabled={!page}
+                title={status}
+                className={`border-b-2 px-3 py-3 text-sm font-medium whitespace-nowrap transition-colors ${index === 0 ? "border-blue-600 text-blue-600 dark:border-blue-500 dark:text-blue-400" : "border-transparent text-gray-600 hover:border-gray-300 hover:text-gray-900 dark:text-gray-400 dark:hover:text-gray-200"}`}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+        </div>
         <div className="mb-4 flex items-center justify-between gap-3">
           <h2
             id="basic-settings-sections"
@@ -413,7 +561,8 @@ function BasicSettingsPage({
 
       <div className="rounded-xl border border-blue-100 bg-blue-50/50 px-4 py-3 text-sm leading-6 text-blue-900 dark:border-blue-900/60 dark:bg-blue-950/20 dark:text-blue-100">
         Web 配置保存在服务端。涉及浏览器页面会话、WAF 或 Turnstile
-        的能力，请在“运行能力”中确认工作节点状态。
+        的能力，请在“运行能力”中确认工作节点状态。CLIProxyAPI 和 Claude Code
+        Router 目前请使用浏览器扩展中的对应设置。
       </div>
     </div>
   )
@@ -537,7 +686,7 @@ function OverviewPage({
         <LayoutDashboard className="mt-1 size-6 shrink-0 text-blue-600 dark:text-blue-400" />
         <div className="min-w-0">
           <h1 className="text-2xl font-semibold tracking-tight text-gray-900 dark:text-white">
-            账户总览
+            总览
           </h1>
           <p className="mt-2 text-sm text-gray-600 dark:text-gray-300">
             汇总账户、用量、自动化与系统配置状态。
@@ -782,6 +931,7 @@ function OverviewPage({
 
 export function AccountDashboard({
   data,
+  bookmarks = null,
   tags,
   siteAnnouncements,
   automation,
@@ -804,6 +954,10 @@ export function AccountDashboard({
   busy,
   message,
   onCreate,
+  onLoadBookmarks = async () => {},
+  onCreateBookmark = async () => {},
+  onUpdateBookmark = async () => {},
+  onDeleteBookmark = async () => {},
   onDetectAccount,
   onUpdate,
   onLoadSiteAnnouncements,
@@ -819,13 +973,11 @@ export function AccountDashboard({
   onReorder,
   onRefresh,
   onRefreshAll,
-  onRunCheckIn,
   onSaveAutomation,
   onLoadPreferences = async () => {},
   onSavePreferences = async () => {},
   onUpdateChannelConfig = async () => {},
   onLoadHistory,
-  onLoadUsageHistory,
   onLoadUsageAnalytics,
   onSyncUsageHistory,
   onLoadNotifications,
@@ -866,6 +1018,15 @@ export function AccountDashboard({
   onTestWebDav,
   onUploadWebDavBackup,
   onRestoreWebDavBackup,
+  onExportBackup = async () => ({
+    type: "all-api-hub-web-backup",
+    version: 1,
+    createdAt: Date.now(),
+    documents: [],
+  }),
+  onExportAccounts = async () => ({}),
+  onImportAccounts = async () => {},
+  onRestoreBackup = async () => {},
   onLoadExternalNotifications,
   onSaveExternalNotifications,
   onTestExternalNotification,
@@ -873,6 +1034,11 @@ export function AccountDashboard({
   onLogout,
 }: AccountDashboardProps) {
   const [search, setSearch] = useState("")
+  const [accountStatusFilter, setAccountStatusFilter] = useState("all")
+  const [siteTypeFilter, setSiteTypeFilter] = useState("all")
+  const [refreshStatusFilter, setRefreshStatusFilter] = useState("all")
+  const [checkInStatusFilter, setCheckInStatusFilter] = useState("all")
+  const [selectedTagIds, setSelectedTagIds] = useState<string[]>([])
   const searchInputRef = useRef<HTMLInputElement>(null)
   const [activePage, setActivePage] = useState<DashboardPage>(pageFromHash)
   const [addOpen, setAddOpen] = useState(false)
@@ -934,28 +1100,134 @@ export function AccountDashboard({
     setMobileNavOpen(false)
   }
 
+  const loadPageData = useCallback(
+    async (page: DashboardPage) => {
+      switch (page) {
+        case "bookmarks":
+          await onLoadBookmarks()
+          break
+        case "credentialProfiles":
+          await onLoadCredentialProfiles()
+          break
+        case "models":
+          await onLoadAllModels()
+          break
+        case "keys": {
+          const account = data.accounts[0]
+          if (account) await onLoadKeys(account)
+          break
+        }
+        case "siteAnnouncements":
+          await onLoadSiteAnnouncements()
+          break
+        case "balanceHistory":
+          await onLoadHistory()
+          break
+        case "usageAnalytics":
+          await onLoadUsageAnalytics()
+          break
+        case "managedSiteChannels":
+        case "managedSiteModelSync":
+          await onLoadManagedSites()
+          break
+        case "basicSettings":
+        case "preferences":
+          await onLoadPreferences()
+          break
+        case "runtimeCapabilities":
+          await onLoadRuntimeCapabilities()
+          break
+        case "externalNotifications":
+          await onLoadExternalNotifications()
+          break
+        case "importExport":
+          await onLoadWebDavSettings()
+          break
+        default:
+          break
+      }
+    },
+    [
+      data.accounts,
+      onLoadAllModels,
+      onLoadBookmarks,
+      onLoadCredentialProfiles,
+      onLoadHistory,
+      onLoadKeys,
+      onLoadManagedSites,
+      onLoadPreferences,
+      onLoadRuntimeCapabilities,
+      onLoadSiteAnnouncements,
+      onLoadUsageAnalytics,
+      onLoadWebDavSettings,
+      onLoadExternalNotifications,
+    ],
+  )
+
+  const loadedPageRef = useRef<DashboardPage | null>(null)
+  useEffect(() => {
+    if (loadedPageRef.current === activePage) return
+    loadedPageRef.current = activePage
+    void loadPageData(activePage)
+  }, [activePage, loadPageData])
+
   const tagNameById = useMemo(
     () => new Map(tags.tags.map((tag) => [tag.id, tag.name])),
     [tags.tags],
   )
 
+  const siteTypeCounts = useMemo(() => {
+    const counts = new Map<string, number>()
+    for (const account of data.accounts) {
+      counts.set(account.siteType, (counts.get(account.siteType) ?? 0) + 1)
+    }
+    return Array.from(counts.entries()).sort(([left], [right]) =>
+      left.localeCompare(right),
+    )
+  }, [data.accounts])
+
   const filteredAccounts = useMemo(() => {
     const query = search.trim().toLocaleLowerCase()
-    const matching = !query
-      ? data.accounts
-      : data.accounts.filter((account) => {
-          const tagNames = account.tagIds.flatMap((id) => {
-            const name = tagNameById.get(id)
-            return name ? [name] : []
-          })
-          return [
-            account.name,
-            account.baseUrl,
-            account.siteType,
-            account.username,
-            ...tagNames,
-          ].some((value) => value.toLocaleLowerCase().includes(query))
-        })
+    const matching = data.accounts.filter((account) => {
+      const tagNames = account.tagIds.flatMap((id) => {
+        const name = tagNameById.get(id)
+        return name ? [name] : []
+      })
+      const matchesSearch =
+        !query ||
+        [
+          account.name,
+          account.baseUrl,
+          account.siteType,
+          account.username,
+          ...tagNames,
+        ].some((value) => value.toLocaleLowerCase().includes(query))
+      const matchesAccountStatus =
+        accountStatusFilter === "all" ||
+        (accountStatusFilter === "disabled"
+          ? account.disabled
+          : !account.disabled)
+      const matchesSiteType =
+        siteTypeFilter === "all" || account.siteType === siteTypeFilter
+      const matchesRefresh =
+        refreshStatusFilter === "all" ||
+        getAccountRefreshFilter(account) === refreshStatusFilter
+      const matchesCheckIn =
+        checkInStatusFilter === "all" ||
+        getAccountCheckInFilter(account) === checkInStatusFilter
+      const matchesTags =
+        selectedTagIds.length === 0 ||
+        selectedTagIds.some((tagId) => account.tagIds.includes(tagId))
+
+      return (
+        matchesSearch &&
+        matchesAccountStatus &&
+        matchesSiteType &&
+        matchesRefresh &&
+        matchesCheckIn &&
+        matchesTags
+      )
+    })
 
     const sortField = preferences?.preferences.sortField
     if (!sortField) return matching
@@ -992,7 +1264,17 @@ export function AccountDashboard({
           (originalPosition.get(right.id) ?? 0)
       )
     })
-  }, [data.accounts, preferences, search, tagNameById])
+  }, [
+    accountStatusFilter,
+    checkInStatusFilter,
+    data.accounts,
+    preferences,
+    refreshStatusFilter,
+    search,
+    selectedTagIds,
+    siteTypeFilter,
+    tagNameById,
+  ])
 
   useEffect(() => {
     const existingIds = new Set(data.accounts.map((account) => account.id))
@@ -1080,112 +1362,122 @@ export function AccountDashboard({
     onClick: () => void | Promise<void>
   }> = [
     {
-      label: "账户总览",
+      label: "总览",
       icon: LayoutDashboard,
-      category: "概览",
+      category: "常规",
       page: "overview",
       onClick: () => navigateToPage("overview"),
     },
     {
       label: "账户管理",
       icon: Users,
-      category: "概览",
+      category: "常规",
       page: "accounts",
       onClick: () => navigateToPage("accounts"),
     },
     {
-      label: "用量分析",
-      icon: ChartNoAxesCombined,
-      category: "概览",
-      page: "usageAnalytics",
-      onClick: async () => {
-        navigateToPage("usageAnalytics")
-        await onLoadUsageAnalytics()
-      },
+      label: "API 凭据库",
+      icon: KeyRound,
+      category: "常规",
+      page: "credentialProfiles",
+      onClick: () => navigateToPage("credentialProfiles"),
     },
     {
-      label: "网站公告",
-      icon: Bell,
-      category: "概览",
-      page: "siteAnnouncements",
-      badge: siteAnnouncements.unreadCount,
-      onClick: async () => {
-        navigateToPage("siteAnnouncements")
-        await onLoadSiteAnnouncements()
-      },
+      label: "书签管理",
+      icon: Bookmark,
+      category: "常规",
+      page: "bookmarks",
+      onClick: () => navigateToPage("bookmarks"),
     },
     {
-      label: "模型总览",
+      label: "模型列表",
       icon: Boxes,
-      category: "资源",
+      category: "接口",
       page: "models",
-      onClick: async () => {
-        navigateToPage("models")
-        await onLoadAllModels()
-      },
+      onClick: () => navigateToPage("models"),
     },
     {
-      label: "自动刷新",
-      icon: TimerReset,
+      label: "密钥管理",
+      icon: KeyRound,
+      category: "接口",
+      page: "keys",
+      onClick: () => navigateToPage("keys"),
+    },
+    {
+      label: "自动签到",
+      icon: CalendarCheck2,
       category: "自动化",
       page: "automation",
       onClick: () => navigateToPage("automation"),
     },
     {
-      label: "基础设置",
+      label: "网站公告",
+      icon: Bell,
+      category: "自动化",
+      page: "siteAnnouncements",
+      badge: siteAnnouncements.unreadCount,
+      onClick: () => navigateToPage("siteAnnouncements"),
+    },
+    {
+      label: "余额历史",
+      icon: History,
+      category: "洞察",
+      page: "balanceHistory",
+      onClick: () => navigateToPage("balanceHistory"),
+    },
+    {
+      label: "用量分析",
+      icon: ChartNoAxesCombined,
+      category: "洞察",
+      page: "usageAnalytics",
+      onClick: () => navigateToPage("usageAnalytics"),
+    },
+    {
+      label: "渠道管理",
+      icon: ServerCog,
+      category: "站点管理",
+      page: "managedSiteChannels",
+      onClick: () => navigateToPage("managedSiteChannels"),
+    },
+    {
+      label: "模型同步",
+      icon: RefreshCw,
+      category: "站点管理",
+      page: "managedSiteModelSync",
+      onClick: () => navigateToPage("managedSiteModelSync"),
+    },
+    {
+      label: "设置",
       icon: Settings2,
       category: "系统",
       page: "basicSettings",
       onClick: () => navigateToPage("basicSettings"),
     },
     {
-      label: "运行能力",
-      icon: Activity,
+      label: "导入/导出",
+      icon: Cloud,
       category: "系统",
-      page: "runtimeCapabilities",
-      onClick: async () => {
-        navigateToPage("runtimeCapabilities")
-        await onLoadRuntimeCapabilities()
-      },
+      page: "importExport",
+      onClick: () => navigateToPage("importExport"),
     },
     {
-      label: "外部通知",
-      icon: Bell,
+      label: "关于",
+      icon: Info,
       category: "系统",
-      page: "externalNotifications",
-      onClick: async () => {
-        navigateToPage("externalNotifications")
-        await onLoadExternalNotifications()
-      },
-    },
-    {
-      label: "API 凭据库",
-      icon: KeyRound,
-      category: "系统",
-      page: "credentialProfiles",
-      onClick: async () => {
-        navigateToPage("credentialProfiles")
-        await onLoadCredentialProfiles()
-      },
-    },
-    {
-      label: "API 检测",
-      icon: ShieldCheck,
-      category: "系统",
-      page: "apiCheck",
-      onClick: () => navigateToPage("apiCheck"),
-    },
-    {
-      label: "显示偏好",
-      icon: Settings2,
-      category: "系统",
-      page: "preferences",
-      onClick: async () => {
-        navigateToPage("preferences")
-        await onLoadPreferences()
-      },
+      page: "about",
+      onClick: () => navigateToPage("about"),
     },
   ]
+
+  // 设置页中的子页面仍属于上游的“设置”分组，保持侧栏选中状态稳定。
+  const activeNavigationPage: DashboardPage = [
+    "preferences",
+    "runtimeCapabilities",
+    "externalNotifications",
+    "apiCheck",
+  ].includes(activePage)
+    ? "basicSettings"
+    : activePage
 
   const renderNavigation = (ariaLabel: string, collapsed = false) => (
     <nav
@@ -1197,7 +1489,7 @@ export function AccountDashboard({
           ({ label, icon: Icon, page, badge, onClick, category }, index) => {
             const isNewCategory =
               index === 0 || navigationItems[index - 1]?.category !== category
-            const active = activePage === page
+            const active = activeNavigationPage === page
             return (
               <li key={label}>
                 {isNewCategory && !collapsed ? (
@@ -1304,8 +1596,8 @@ export function AccountDashboard({
               </button>
               <button
                 type="button"
-                aria-label="基础设置"
-                title="基础设置"
+                aria-label="设置"
+                title="设置"
                 onClick={() => {
                   navigateToPage("basicSettings")
                 }}
@@ -1448,62 +1740,40 @@ export function AccountDashboard({
                   />
                 ) : activePage === "accounts" ? (
                   <div className="space-y-6">
-                    <div className="flex items-start gap-3">
-                      <Users className="mt-1 size-6 shrink-0 text-blue-600 dark:text-blue-400" />
-                      <div className="min-w-0">
-                        <h1 className="text-2xl font-semibold tracking-tight text-gray-900 dark:text-white">
-                          账户管理
-                        </h1>
-                        <p className="mt-2 text-sm text-gray-600 dark:text-gray-300">
-                          管理站点账户、余额、健康状态和访问密钥。
-                        </p>
+                    <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                      <div className="flex min-w-0 items-start gap-3">
+                        <Users className="mt-1 size-6 shrink-0 text-blue-600 dark:text-blue-400" />
+                        <div className="min-w-0">
+                          <h1 className="text-2xl font-semibold tracking-tight text-gray-900 dark:text-white">
+                            账户管理
+                          </h1>
+                          <p className="mt-2 text-sm text-gray-600 dark:text-gray-300">
+                            集中管理站点账号，查看余额、健康状态、API Key
+                            与使用情况。
+                          </p>
+                        </div>
+                      </div>
+                      <div className="flex shrink-0 flex-wrap gap-2 sm:justify-end">
+                        <button
+                          type="button"
+                          disabled={busy || data.accounts.length === 0}
+                          onClick={() => void onRefreshAll()}
+                          className="flex h-9 items-center gap-2 rounded-md border border-gray-300 px-3 text-sm font-medium hover:bg-gray-50 disabled:opacity-60 dark:border-gray-700 dark:hover:bg-gray-800"
+                        >
+                          <RefreshCw className="size-4" />
+                          刷新全部
+                        </button>
+                        <button
+                          type="button"
+                          disabled={busy}
+                          onClick={() => setAddOpen(true)}
+                          className="flex h-9 items-center gap-2 rounded-md bg-blue-600 px-3 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-60"
+                        >
+                          <Plus className="size-4" />
+                          新增账号
+                        </button>
                       </div>
                     </div>
-                    <section className="grid grid-cols-2 border-y border-gray-200 bg-white sm:grid-cols-4 dark:border-gray-800 dark:bg-gray-900">
-                      {[
-                        {
-                          label: "总余额",
-                          value: formatMoney(
-                            totalBalance,
-                            preferences?.preferences.currencyType ?? "USD",
-                          ),
-                          icon: CircleDollarSign,
-                        },
-                        {
-                          label: "账户",
-                          value: String(data.accounts.length),
-                          icon: Users,
-                        },
-                        {
-                          label: "启用",
-                          value: String(activeAccounts.length),
-                          icon: Power,
-                        },
-                        {
-                          label: "健康",
-                          value: String(healthyAccounts),
-                          icon: ShieldCheck,
-                        },
-                      ].map(({ label, value, icon: Icon }, index) => (
-                        <div
-                          key={label}
-                          className={`flex min-h-24 items-center gap-3 px-4 py-4 ${
-                            index % 2 === 0 ? "border-r" : ""
-                          } ${index < 2 ? "border-b sm:border-b-0" : ""} border-gray-200 sm:border-r sm:last:border-r-0 dark:border-gray-800`}
-                        >
-                          <div className="flex size-9 shrink-0 items-center justify-center rounded-md bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-300">
-                            <Icon className="size-4" />
-                          </div>
-                          <div className="min-w-0">
-                            <div className="text-xs text-gray-500">{label}</div>
-                            <div className="mt-1 truncate text-lg font-semibold tabular-nums">
-                              {value}
-                            </div>
-                          </div>
-                        </div>
-                      ))}
-                    </section>
-
                     {message ? (
                       <div
                         role={message.kind === "error" ? "alert" : "status"}
@@ -1518,196 +1788,121 @@ export function AccountDashboard({
                     ) : null}
 
                     <section className="overflow-hidden rounded-md border border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900">
-                      <div className="flex flex-col gap-3 border-b border-gray-200 p-4 md:flex-row md:items-center md:justify-between dark:border-gray-800">
-                        <div className="relative w-full md:max-w-sm">
-                          <Search className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-gray-400" />
-                          <input
-                            ref={searchInputRef}
-                            value={search}
-                            onChange={(event) => setSearch(event.target.value)}
-                            placeholder="搜索名称、站点或类型"
-                            className="h-9 w-full rounded-md border border-gray-300 bg-white pr-3 pl-9 text-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/25 dark:border-gray-700 dark:bg-gray-950"
-                          />
+                      <div className="space-y-3 border-b border-gray-200 p-4 dark:border-gray-800">
+                        <div className="flex flex-col gap-3 2xl:flex-row 2xl:items-center">
+                          <div className="relative min-w-0 2xl:w-80 2xl:shrink-0">
+                            <Search className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-gray-400" />
+                            <input
+                              ref={searchInputRef}
+                              value={search}
+                              onChange={(event) =>
+                                setSearch(event.target.value)
+                              }
+                              placeholder="搜索名称、站点或类型"
+                              className="h-9 w-full rounded-md border border-gray-300 bg-white pr-3 pl-9 text-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/25 dark:border-gray-700 dark:bg-gray-950"
+                            />
+                          </div>
+                          <div className="grid min-w-0 flex-1 grid-cols-2 gap-2 lg:grid-cols-4">
+                            <select
+                              value={siteTypeFilter}
+                              onChange={(event) =>
+                                setSiteTypeFilter(event.target.value)
+                              }
+                              aria-label="站点类型"
+                              className="h-9 min-w-0 rounded-md border border-gray-300 bg-white px-2 text-xs font-medium text-gray-700 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/25 dark:border-gray-700 dark:bg-gray-950 dark:text-gray-200"
+                            >
+                              <option value="all">全部站点类型</option>
+                              {siteTypeCounts.map(([type, count]) => (
+                                <option key={type} value={type}>
+                                  {type} ({count})
+                                </option>
+                              ))}
+                            </select>
+                            <select
+                              value={checkInStatusFilter}
+                              onChange={(event) =>
+                                setCheckInStatusFilter(event.target.value)
+                              }
+                              aria-label="签到状态"
+                              className="h-9 min-w-0 rounded-md border border-gray-300 bg-white px-2 text-xs font-medium text-gray-700 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/25 dark:border-gray-700 dark:bg-gray-950 dark:text-gray-200"
+                            >
+                              <option value="all">全部签到状态</option>
+                              {Object.entries(accountCheckInFilterLabels).map(
+                                ([value, label]) => (
+                                  <option key={value} value={value}>
+                                    {label}
+                                  </option>
+                                ),
+                              )}
+                            </select>
+                            <select
+                              value={refreshStatusFilter}
+                              onChange={(event) =>
+                                setRefreshStatusFilter(event.target.value)
+                              }
+                              aria-label="刷新状态"
+                              className="h-9 min-w-0 rounded-md border border-gray-300 bg-white px-2 text-xs font-medium text-gray-700 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/25 dark:border-gray-700 dark:bg-gray-950 dark:text-gray-200"
+                            >
+                              <option value="all">全部刷新状态</option>
+                              <option value="never-synced">未同步</option>
+                              <option value="healthy">健康</option>
+                              <option value="warning">警告</option>
+                              <option value="error">错误</option>
+                              <option value="unknown">未知</option>
+                            </select>
+                            <select
+                              value={accountStatusFilter}
+                              onChange={(event) =>
+                                setAccountStatusFilter(event.target.value)
+                              }
+                              aria-label="账号状态"
+                              className="h-9 min-w-0 rounded-md border border-gray-300 bg-white px-2 text-xs font-medium text-gray-700 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/25 dark:border-gray-700 dark:bg-gray-950 dark:text-gray-200"
+                            >
+                              <option value="all">全部账号</option>
+                              <option value="enabled">已启用</option>
+                              <option value="disabled">已停用</option>
+                            </select>
+                          </div>
+                          <span className="shrink-0 text-xs font-medium text-gray-500">
+                            共 {filteredAccounts.length} 个账号
+                          </span>
                         </div>
-                        <div className="flex flex-wrap gap-2">
+                        <div className="flex flex-wrap items-center gap-1.5">
+                          <button
+                            type="button"
+                            onClick={() => setSelectedTagIds([])}
+                            className={`rounded-md px-2.5 py-1 text-xs font-medium ${selectedTagIds.length === 0 ? "bg-blue-100 text-blue-700 dark:bg-blue-950/60 dark:text-blue-300" : "text-gray-600 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-800"}`}
+                          >
+                            全部标签
+                          </button>
+                          {tags.tags.map((tag) => {
+                            const selected = selectedTagIds.includes(tag.id)
+                            return (
+                              <button
+                                key={tag.id}
+                                type="button"
+                                aria-pressed={selected}
+                                onClick={() =>
+                                  setSelectedTagIds((current) =>
+                                    selected
+                                      ? current.filter((id) => id !== tag.id)
+                                      : [...current, tag.id],
+                                  )
+                                }
+                                className={`rounded-md px-2.5 py-1 text-xs font-medium ${selected ? "bg-blue-100 text-blue-700 dark:bg-blue-950/60 dark:text-blue-300" : "text-gray-600 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-800"}`}
+                              >
+                                {tag.name}
+                              </button>
+                            )
+                          })}
                           <button
                             type="button"
                             disabled={busy}
                             onClick={() => setTagsOpen(true)}
-                            className="flex h-9 items-center gap-2 rounded-md border border-gray-300 px-3 text-sm font-medium hover:bg-gray-50 disabled:opacity-60 dark:border-gray-700 dark:hover:bg-gray-800"
+                            className="ml-auto flex h-8 items-center gap-1.5 rounded-md border border-gray-300 px-2.5 text-xs font-medium hover:bg-gray-50 disabled:opacity-60 dark:border-gray-700 dark:hover:bg-gray-800"
                           >
-                            <Tags className="size-4" />
-                            标签
-                          </button>
-                          <button
-                            type="button"
-                            disabled={busy}
-                            onClick={async () => {
-                              await onLoadUsageAnalytics()
-                              setUsageAnalyticsOpen(true)
-                            }}
-                            className="flex h-9 items-center gap-2 rounded-md border border-gray-300 px-3 text-sm font-medium hover:bg-gray-50 disabled:opacity-60 dark:border-gray-700 dark:hover:bg-gray-800"
-                          >
-                            <ChartNoAxesCombined className="size-4" />
-                            用量分析
-                          </button>
-                          <button
-                            type="button"
-                            disabled={busy}
-                            onClick={async () => {
-                              await onLoadSiteAnnouncements()
-                              setSiteAnnouncementsOpen(true)
-                            }}
-                            className="flex h-9 items-center gap-2 rounded-md border border-gray-300 px-3 text-sm font-medium hover:bg-gray-50 disabled:opacity-60 dark:border-gray-700 dark:hover:bg-gray-800"
-                          >
-                            <Bell className="size-4" />
-                            网站公告
-                            {siteAnnouncements.unreadCount > 0 ? (
-                              <span className="rounded-full bg-blue-100 px-1.5 py-0.5 text-[11px] text-blue-700 dark:bg-blue-950/60 dark:text-blue-300">
-                                {siteAnnouncements.unreadCount}
-                              </span>
-                            ) : null}
-                          </button>
-                          <button
-                            type="button"
-                            disabled={busy}
-                            onClick={async () => {
-                              await onLoadAllModels()
-                              setAllModelsOpen(true)
-                            }}
-                            className="flex h-9 items-center gap-2 rounded-md border border-gray-300 px-3 text-sm font-medium hover:bg-gray-50 disabled:opacity-60 dark:border-gray-700 dark:hover:bg-gray-800"
-                          >
-                            <Boxes className="size-4" />
-                            模型总览
-                          </button>
-                          <button
-                            type="button"
-                            disabled={busy}
-                            onClick={async () => {
-                              await onLoadManagedSites()
-                              setManagedSitesOpen(true)
-                            }}
-                            className="flex h-9 items-center gap-2 rounded-md border border-gray-300 px-3 text-sm font-medium hover:bg-gray-50 disabled:opacity-60 dark:border-gray-700 dark:hover:bg-gray-800"
-                          >
-                            <ServerCog className="size-4" />
-                            托管站点
-                          </button>
-                          <button
-                            type="button"
-                            disabled={busy}
-                            onClick={async () => {
-                              await onLoadWebDavSettings()
-                              setWebDavOpen(true)
-                            }}
-                            className="flex h-9 items-center gap-2 rounded-md border border-gray-300 px-3 text-sm font-medium hover:bg-gray-50 disabled:opacity-60 dark:border-gray-700 dark:hover:bg-gray-800"
-                          >
-                            <Cloud className="size-4" />
-                            WebDAV
-                          </button>
-                          <button
-                            type="button"
-                            disabled={busy}
-                            onClick={async () => {
-                              await onLoadUsageHistory()
-                              setUsageHistoryOpen(true)
-                            }}
-                            className="flex h-9 items-center gap-2 rounded-md border border-gray-300 px-3 text-sm font-medium hover:bg-gray-50 disabled:opacity-60 dark:border-gray-700 dark:hover:bg-gray-800"
-                          >
-                            <ChartNoAxesCombined className="size-4" />
-                            用量历史
-                          </button>
-                          <button
-                            type="button"
-                            disabled={busy}
-                            onClick={async () => {
-                              await onLoadHistory()
-                              setHistoryOpen(true)
-                            }}
-                            className="flex h-9 items-center gap-2 rounded-md border border-gray-300 px-3 text-sm font-medium hover:bg-gray-50 disabled:opacity-60 dark:border-gray-700 dark:hover:bg-gray-800"
-                          >
-                            <History className="size-4" />
-                            余额历史
-                          </button>
-                          <button
-                            type="button"
-                            disabled={busy || data.accounts.length === 0}
-                            onClick={() => void onRunCheckIn()}
-                            className="flex h-9 items-center gap-2 rounded-md border border-gray-300 px-3 text-sm font-medium hover:bg-gray-50 disabled:opacity-60 dark:border-gray-700 dark:hover:bg-gray-800"
-                          >
-                            <CalendarCheck2 className="size-4" />
-                            签到全部
-                          </button>
-                          <button
-                            type="button"
-                            disabled={busy || !automation}
-                            onClick={() => setAutomationOpen(true)}
-                            className="flex h-9 items-center gap-2 rounded-md border border-gray-300 px-3 text-sm font-medium hover:bg-gray-50 disabled:opacity-60 dark:border-gray-700 dark:hover:bg-gray-800"
-                          >
-                            <TimerReset className="size-4" />
-                            自动化
-                          </button>
-                          <button
-                            type="button"
-                            disabled={busy}
-                            onClick={async () => {
-                              await onLoadRuntimeCapabilities()
-                              setRuntimeCapabilitiesOpen(true)
-                            }}
-                            className="flex h-9 items-center gap-2 rounded-md border border-gray-300 px-3 text-sm font-medium hover:bg-gray-50 disabled:opacity-60 dark:border-gray-700 dark:hover:bg-gray-800"
-                          >
-                            <Activity className="size-4" />
-                            运行能力
-                          </button>
-                          <button
-                            type="button"
-                            disabled={busy}
-                            onClick={async () => {
-                              await onLoadExternalNotifications()
-                              setExternalNotificationsOpen(true)
-                            }}
-                            className="flex h-9 items-center gap-2 rounded-md border border-gray-300 px-3 text-sm font-medium hover:bg-gray-50 disabled:opacity-60 dark:border-gray-700 dark:hover:bg-gray-800"
-                          >
-                            <Bell className="size-4" />
-                            外部通知
-                          </button>
-                          <button
-                            type="button"
-                            disabled={busy}
-                            onClick={async () => {
-                              await onLoadCredentialProfiles()
-                              setCredentialProfilesOpen(true)
-                            }}
-                            className="flex h-9 items-center gap-2 rounded-md border border-gray-300 px-3 text-sm font-medium hover:bg-gray-50 disabled:opacity-60 dark:border-gray-700 dark:hover:bg-gray-800"
-                          >
-                            <KeyRound className="size-4" />
-                            API 凭据库
-                          </button>
-                          <button
-                            type="button"
-                            disabled={busy}
-                            onClick={() => setApiCheckOpen(true)}
-                            className="flex h-9 items-center gap-2 rounded-md border border-gray-300 px-3 text-sm font-medium hover:bg-gray-50 disabled:opacity-60 dark:border-gray-700 dark:hover:bg-gray-800"
-                          >
-                            <ShieldCheck className="size-4" />
-                            API 检测
-                          </button>
-                          <button
-                            type="button"
-                            disabled={busy || data.accounts.length === 0}
-                            onClick={() => void onRefreshAll()}
-                            className="flex h-9 items-center gap-2 rounded-md border border-gray-300 px-3 text-sm font-medium hover:bg-gray-50 disabled:opacity-60 dark:border-gray-700 dark:hover:bg-gray-800"
-                          >
-                            <RefreshCw className="size-4" />
-                            刷新全部
-                          </button>
-                          <button
-                            type="button"
-                            disabled={busy}
-                            onClick={() => setAddOpen(true)}
-                            className="flex h-9 items-center gap-2 rounded-md bg-blue-600 px-3 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-60"
-                          >
-                            <Plus className="size-4" />
-                            添加账户
+                            <Tags className="size-3.5" />
+                            管理标签
                           </button>
                         </div>
                       </div>
@@ -2062,6 +2257,88 @@ export function AccountDashboard({
                     preferences={preferences}
                     onNavigate={navigateToPage}
                   />
+                ) : activePage === "bookmarks" ? (
+                  <WebDialogInlineProvider>
+                    <BookmarksDialog
+                      open
+                      busy={busy}
+                      bookmarks={
+                        bookmarks ?? {
+                          bookmarks: [],
+                          pinnedBookmarkIds: [],
+                          revision: 0,
+                          lastUpdated: 0,
+                        }
+                      }
+                      tags={tags.tags}
+                      onClose={() => navigateToPage("overview")}
+                      onCreate={onCreateBookmark}
+                      onUpdate={onUpdateBookmark}
+                      onDelete={onDeleteBookmark}
+                    />
+                  </WebDialogInlineProvider>
+                ) : activePage === "balanceHistory" ? (
+                  <WebDialogInlineProvider>
+                    <BalanceHistoryDialog
+                      open
+                      history={history}
+                      onClose={() => navigateToPage("overview")}
+                    />
+                  </WebDialogInlineProvider>
+                ) : activePage === "keys" ? (
+                  <WebDialogInlineProvider>
+                    <KeyManagementDialog
+                      open
+                      busy={busy}
+                      keys={apiKeys}
+                      createdSecret={createdKeySecret}
+                      title="密钥管理"
+                      onClose={() => navigateToPage("overview")}
+                      onCreate={onCreateKey}
+                      onDelete={onDeleteKey}
+                      onUpdate={onUpdateKey}
+                    />
+                  </WebDialogInlineProvider>
+                ) : activePage === "managedSiteChannels" ||
+                  activePage === "managedSiteModelSync" ? (
+                  <WebDialogInlineProvider>
+                    <ManagedSitesDialog
+                      open
+                      busy={busy}
+                      connections={managedSites}
+                      channels={managedChannels}
+                      title={
+                        activePage === "managedSiteChannels"
+                          ? "渠道管理"
+                          : "模型同步"
+                      }
+                      onClose={() => navigateToPage("overview")}
+                      onCreate={onCreateManagedSite}
+                      onDeleteConnection={onDeleteManagedSite}
+                      onLoadChannels={onLoadManagedChannels}
+                      onDeleteChannel={onDeleteManagedChannel}
+                      onCreateChannel={onCreateManagedChannel}
+                      onUpdateChannel={onUpdateManagedChannel}
+                      onSyncModels={onSyncManagedSiteModels}
+                      channelConfigs={channelConfigs}
+                      onUpdateChannelConfig={onUpdateChannelConfig}
+                    />
+                  </WebDialogInlineProvider>
+                ) : activePage === "importExport" ? (
+                  <ImportExportPage
+                    busy={busy}
+                    onExportBackup={onExportBackup}
+                    onExportAccounts={onExportAccounts}
+                    onImportAccounts={onImportAccounts}
+                    onRestoreBackup={onRestoreBackup}
+                    webDavSettings={webDavSettings}
+                    onSaveWebDavSettings={onSaveWebDavSettings}
+                    onTestWebDav={onTestWebDav}
+                    onUploadWebDav={onUploadWebDavBackup}
+                    onRestoreWebDav={onRestoreWebDavBackup}
+                  />
+                ) : activePage === "about" ? (
+                  <AboutPage />
                 ) : (
                   <WebDialogInlineProvider>
                     {activePage === "usageAnalytics" ? (
@@ -2096,6 +2373,7 @@ export function AccountDashboard({
                         open
                         busy={busy}
                         automation={automation}
+                        title="自动签到"
                         onClose={() => navigateToPage("overview")}
                         onSave={onSaveAutomation}
                       />
@@ -2135,6 +2413,7 @@ export function AccountDashboard({
                         onClose={() => navigateToPage("overview")}
                         onFetchModels={onFetchVerificationModels}
                         onRunVerification={onRunVerification}
+                        onSaveProfile={onCreateCredentialProfile}
                       />
                     ) : (
                       <PreferencesDialog
@@ -2271,6 +2550,7 @@ export function AccountDashboard({
         onClose={() => setApiCheckOpen(false)}
         onFetchModels={onFetchVerificationModels}
         onRunVerification={onRunVerification}
+        onSaveProfile={onCreateCredentialProfile}
       />
       <ManagedSitesDialog
         open={managedSitesOpen}

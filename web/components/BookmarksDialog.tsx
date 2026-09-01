@@ -81,7 +81,7 @@ export function BookmarksDialog({
     <WebDialog
       open={open}
       onClose={onClose}
-      title="书签"
+      title="书签管理"
       description="保存常用站点地址，在浏览器中直接打开。"
     >
       <form onSubmit={submit} className="grid gap-3">

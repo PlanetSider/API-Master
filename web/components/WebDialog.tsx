@@ -1,10 +1,13 @@
 import {
   Activity,
   Bell,
+  Bookmark,
   Boxes,
   ChartNoAxesCombined,
+  History,
   KeyRound,
   Palette,
+  RefreshCw,
   ServerCog,
   Settings2,
   ShieldCheck,
@@ -31,27 +34,45 @@ export function WebDialogInlineProvider({ children }: { children: ReactNode }) {
   )
 }
 
+export function WebDialogModalProvider({ children }: { children: ReactNode }) {
+  return (
+    <WebDialogInlineContext.Provider value={false}>
+      {children}
+    </WebDialogInlineContext.Provider>
+  )
+}
+
 interface WebDialogProps {
   open: boolean
   title: string
   description?: string
   children: ReactNode
+  inlineActions?: ReactNode
   footer?: ReactNode
   onClose: () => void
 }
 
 const inlineTitleIcons: Record<string, LucideIcon> = {
+  书签管理: Bookmark,
   用量分析: ChartNoAxesCombined,
   网站公告: Bell,
+  余额历史: History,
+  模型列表: Boxes,
   模型总览: Boxes,
   自动刷新: TimerReset,
+  自动签到: TimerReset,
   运行能力: Activity,
   外部通知: Bell,
   "API 凭据库": KeyRound,
+  密钥管理: KeyRound,
   "API 检测": ShieldCheck,
+  "API 连通性检测": ShieldCheck,
+  "AI API 功能可用性测试": ShieldCheck,
   显示偏好: Palette,
   "WebDAV 设置": ServerCog,
   托管站点: ServerCog,
+  渠道管理: ServerCog,
+  模型同步: RefreshCw,
   通知中心: Bell,
 }
 
@@ -60,6 +81,7 @@ export function WebDialog({
   title,
   description,
   children,
+  inlineActions,
   footer,
   onClose,
 }: WebDialogProps) {
@@ -100,7 +122,7 @@ export function WebDialog({
         className="w-full outline-none"
       >
         <div className="[container-type:inline-size] mb-8">
-          <div className="flex flex-col gap-2 [@container(min-width:42rem)]:flex-row [@container(min-width:42rem)]:items-start [@container(min-width:42rem)]:justify-between [@container(min-width:42rem)]:gap-4">
+          <div className="flex flex-col gap-3 [@container(min-width:42rem)]:flex-row [@container(min-width:42rem)]:items-start [@container(min-width:42rem)]:justify-between [@container(min-width:42rem)]:gap-4">
             <div className="flex min-w-0 items-center gap-3">
               <Icon className="size-6 shrink-0 text-blue-600 dark:text-blue-400" />
               <h1
@@ -110,6 +132,11 @@ export function WebDialog({
                 {title}
               </h1>
             </div>
+            {inlineActions ? (
+              <div className="flex w-full min-w-0 flex-wrap items-center gap-2 [@container(min-width:42rem)]:w-auto [@container(min-width:42rem)]:justify-end">
+                {inlineActions}
+              </div>
+            ) : null}
           </div>
           {description ? (
             <p
@@ -121,7 +148,7 @@ export function WebDialog({
           ) : null}
         </div>
         <div className="min-w-0">{children}</div>
-        {footer ? (
+        {footer && !inlineActions ? (
           <div className="mt-8 flex flex-wrap justify-end gap-2 border-t border-gray-200 pt-4 dark:border-gray-700">
             {footer}
           </div>

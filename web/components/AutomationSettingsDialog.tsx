@@ -12,6 +12,7 @@ interface AutomationSettingsDialogProps {
   open: boolean
   busy: boolean
   automation: WebAutomationSettingsResponse | null
+  title?: string
   onClose: () => void
   onSave: (patch: WebAutomationSettingsPatch) => Promise<void>
 }
@@ -28,6 +29,7 @@ export function AutomationSettingsDialog({
   open,
   busy,
   automation,
+  title = "自动刷新",
   onClose,
   onSave,
 }: AutomationSettingsDialogProps) {
@@ -102,7 +104,7 @@ export function AutomationSettingsDialog({
     <WebDialog
       open={open}
       onClose={onClose}
-      title="自动刷新"
+      title={title}
       description="由服务端调度账户刷新，浏览器关闭后仍会继续运行。"
       footer={
         <>

@@ -129,6 +129,8 @@ export interface WebAccountSummary {
   tagIds: string[]
   notes: string
   health: HealthStatus
+  /** Derived daily check-in state used by the web account-list filter. */
+  checkInStatus?: WebAccountCheckInStatus
   balance: {
     USD: number
     CNY: number
@@ -145,6 +147,13 @@ export interface WebAccountSummary {
   createdAt: number
   exchangeRate: number
 }
+
+export type WebAccountCheckInStatus =
+  | "checked-in"
+  | "not-checked-in"
+  | "outdated"
+  | "status-unavailable"
+  | "unsupported"
 
 export interface WebAccountListResponse {
   accounts: WebAccountSummary[]

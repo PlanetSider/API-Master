@@ -165,8 +165,8 @@ export function ExternalNotificationSettingsDialog({
     }))
   }
 
-  const submit = async (event: FormEvent) => {
-    event.preventDefault()
+  const submit = async (event?: FormEvent) => {
+    event?.preventDefault()
     if (!settings) return
     setError(null)
     try {
@@ -190,6 +190,17 @@ export function ExternalNotificationSettingsDialog({
       onClose={onClose}
       title="外部通知"
       description="由服务端向第三方渠道发送任务结果。凭据只写入服务端，不会回显。"
+      inlineActions={
+        <button
+          type="button"
+          disabled={busy || !settings}
+          onClick={() => void submit()}
+          className="flex h-9 items-center gap-2 rounded-md bg-blue-600 px-3 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-60"
+        >
+          <Check className="size-4" />
+          {busy ? "正在保存..." : "保存设置"}
+        </button>
+      }
       footer={
         <>
           <button

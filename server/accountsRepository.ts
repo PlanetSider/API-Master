@@ -1,3 +1,9 @@
+import {
+  CHECK_IN_METHOD_STATUS_EVIDENCE_SOURCES,
+  CHECK_IN_METHOD_STATUS_OUTCOMES,
+  CHECK_IN_METHOD_TODAY_STATUSES,
+  CHECK_IN_SELECTION_STATUSES,
+} from "~/constants/checkIn"
 import { UI_CONSTANTS } from "~/constants/ui"
 import {
   canonicalizeAccountStorageConfig,
@@ -5,6 +11,11 @@ import {
   normalizeAccountStorageConfigForWrite,
   normalizeSiteAccount,
 } from "~/services/accounts/accountDefaults"
+import {
+  getSelectedCheckInStatus,
+  inspectAccountCheckIn,
+} from "~/services/checkin/autoCheckin/inspection"
+import { getDayKeyFromUnixSeconds } from "~/services/history/usageHistory/core"
 import {
   DELETED_ENTRY_KIND,
   type AccountStorageConfig,
@@ -14,6 +25,7 @@ import {
 import { safeRandomUUID } from "~/utils/core/identifier"
 import type {
   WebAccountBulkAction,
+  WebAccountCheckInStatus,
   WebAccountSummary,
   WebBookmarkCreateInput,
   WebBookmarkListResponse,
@@ -44,6 +56,74 @@ export class AccountNotFoundError extends Error {
     super("Account not found")
     this.name = "AccountNotFoundError"
   }
+}
+
+const isCurrentCheckInStatus = (account: SiteAccount) => {
+  const status = getSelectedCheckInStatus({
+    config: account.checkIn,
+    siteType: account.site_type,
+  })
+  if (!status || status.outcome !== CHECK_IN_METHOD_STATUS_OUTCOMES.Known) {
+    return false
+  }
+
+  if (
+    status.evidence.source === CHECK_IN_METHOD_STATUS_EVIDENCE_SOURCES.Probe ||
+    status.evidence.source === CHECK_IN_METHOD_STATUS_EVIDENCE_SOURCES.Execution
+  ) {
+    const today = getDayKeyFromUnixSeconds(Math.floor(Date.now() / 1000))
+    return today === getDayKeyFromUnixSeconds(status.evidence.observedAt)
+  }
+
+  if (status.evidence.legacyObservedAt !== undefined) {
+    const today = getDayKeyFromUnixSeconds(Math.floor(Date.now() / 1000))
+    return today === getDayKeyFromUnixSeconds(status.evidence.legacyObservedAt)
+  }
+
+  return (
+    status.evidence.legacyDayKey ===
+    getDayKeyFromUnixSeconds(Math.floor(Date.now() / 1000))
+  )
+}
+
+const getWebAccountCheckInStatus = (
+  account: SiteAccount,
+): WebAccountCheckInStatus => {
+  const customCheckIn = account.checkIn.customCheckIn
+  const hasCustomCheckIn = Boolean(customCheckIn?.url?.trim())
+  const selectedStatus = getSelectedCheckInStatus({
+    config: account.checkIn,
+    siteType: account.site_type,
+  })
+  const siteCheckedInToday =
+    selectedStatus?.outcome === CHECK_IN_METHOD_STATUS_OUTCOMES.Known
+      ? selectedStatus.today === CHECK_IN_METHOD_TODAY_STATUSES.Checked
+        ? true
+        : selectedStatus.today === CHECK_IN_METHOD_TODAY_STATUSES.NotChecked
+          ? false
+          : undefined
+      : undefined
+
+  if (siteCheckedInToday !== undefined && !isCurrentCheckInStatus(account)) {
+    return "outdated"
+  }
+
+  if (siteCheckedInToday === undefined) {
+    const selectionState = inspectAccountCheckIn({
+      config: account.checkIn,
+      siteType: account.site_type,
+    }).selectionState
+    if (selectionState.status === CHECK_IN_SELECTION_STATUSES.Selected) {
+      return "status-unavailable"
+    }
+    if (!hasCustomCheckIn) return "unsupported"
+  }
+
+  const siteFlowChecked =
+    siteCheckedInToday === undefined || siteCheckedInToday === true
+  const customFlowChecked =
+    !hasCustomCheckIn || customCheckIn?.isCheckedInToday === true
+  return siteFlowChecked && customFlowChecked ? "checked-in" : "not-checked-in"
 }
 
 export class InvalidAccountOrderError extends Error {
@@ -328,6 +408,7 @@ export function toWebAccountSummary(
     tagIds: normalized.tagIds,
     notes: normalized.notes,
     health: normalized.health,
+    checkInStatus: getWebAccountCheckInStatus(normalized),
     balance: {
       USD: balanceUsd,
       CNY: balanceUsd * normalized.exchange_rate,

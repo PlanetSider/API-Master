@@ -6,7 +6,7 @@ import type {
   WebDavSettingsResponse,
 } from "~/web/contracts"
 
-import { WebDialog } from "./WebDialog"
+import { WebDialog, WebDialogModalProvider } from "./WebDialog"
 
 interface Props {
   open: boolean
@@ -222,37 +222,39 @@ export function WebDavSettingsDialog(props: Props) {
         </form>
       </WebDialog>
 
-      <WebDialog
-        open={restoreConfirmationOpen}
-        onClose={() => setRestoreConfirmationOpen(false)}
-        title="从 WebDAV 恢复"
-        footer={
-          <>
-            <button
-              type="button"
-              onClick={() => setRestoreConfirmationOpen(false)}
-              className="h-9 rounded-md border px-4 text-sm font-medium"
-            >
-              取消
-            </button>
-            <button
-              type="button"
-              disabled={props.busy}
-              onClick={async () => {
-                await props.onRestore()
-                setRestoreConfirmationOpen(false)
-              }}
-              className="h-9 rounded-md bg-red-600 px-4 text-sm font-medium text-white disabled:opacity-60"
-            >
-              确认恢复
-            </button>
-          </>
-        }
-      >
-        <p className="text-sm text-gray-600 dark:text-gray-300">
-          远端完整备份将替换当前账户、设置、历史、通知和托管站点连接。此操作无法撤销。
-        </p>
-      </WebDialog>
+      <WebDialogModalProvider>
+        <WebDialog
+          open={restoreConfirmationOpen}
+          onClose={() => setRestoreConfirmationOpen(false)}
+          title="从 WebDAV 恢复"
+          footer={
+            <>
+              <button
+                type="button"
+                onClick={() => setRestoreConfirmationOpen(false)}
+                className="h-9 rounded-md border px-4 text-sm font-medium"
+              >
+                取消
+              </button>
+              <button
+                type="button"
+                disabled={props.busy}
+                onClick={async () => {
+                  await props.onRestore()
+                  setRestoreConfirmationOpen(false)
+                }}
+                className="h-9 rounded-md bg-red-600 px-4 text-sm font-medium text-white disabled:opacity-60"
+              >
+                确认恢复
+              </button>
+            </>
+          }
+        >
+          <p className="text-sm text-gray-600 dark:text-gray-300">
+            远端完整备份将替换当前账户、设置、历史、通知和托管站点连接。此操作无法撤销。
+          </p>
+        </WebDialog>
+      </WebDialogModalProvider>
     </>
   )
 }

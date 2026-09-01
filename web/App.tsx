@@ -21,7 +21,12 @@ import type {
   WebApiVerificationResponse,
   WebAutomationSettingsPatch,
   WebAutomationSettingsResponse,
+  WebBackup,
   WebBalanceHistoryResponse,
+  WebBookmarkCreateInput,
+  WebBookmarkListResponse,
+  WebBookmarkPatchInput,
+  WebBookmarkSummary,
   WebChannelConfigPatch,
   WebChannelConfigResponse,
   WebCreateAccountInput,
@@ -75,11 +80,20 @@ const emptyTagList: WebTagListResponse = {
   revision: 0,
 }
 
+const emptyBookmarkList: WebBookmarkListResponse = {
+  bookmarks: [],
+  pinnedBookmarkIds: [],
+  revision: 0,
+  lastUpdated: 0,
+}
+
 function App() {
   const [authenticated, setAuthenticated] = useState<boolean | null>(null)
   const [accounts, setAccounts] =
     useState<WebAccountListResponse>(emptyAccountList)
   const [tags, setTags] = useState<WebTagListResponse>(emptyTagList)
+  const [bookmarks, setBookmarks] =
+    useState<WebBookmarkListResponse>(emptyBookmarkList)
   const [siteAnnouncements, setSiteAnnouncements] =
     useState<WebSiteAnnouncementListResponse>(emptySiteAnnouncementList)
   const [automation, setAutomation] =
@@ -254,9 +268,57 @@ function App() {
     }
   }
 
+  const loadBookmarks = useCallback(async () => {
+    setBookmarks(await webApi.getBookmarks())
+  }, [])
+
+  const createBookmark = async (input: WebBookmarkCreateInput) => {
+    setBusy(true)
+    setNotice(null)
+    try {
+      setBookmarks(await webApi.createBookmark(input))
+      setNotice({ kind: "success", text: "书签已创建。" })
+    } catch (error) {
+      handleApiError(error, "书签创建失败")
+      throw error
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const updateBookmark = async (id: string, input: WebBookmarkPatchInput) => {
+    setBusy(true)
+    setNotice(null)
+    try {
+      setBookmarks(await webApi.updateBookmark(id, input))
+      setNotice({ kind: "success", text: "书签已更新。" })
+    } catch (error) {
+      handleApiError(error, "书签更新失败")
+      throw error
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const deleteBookmark = async (bookmark: WebBookmarkSummary) => {
+    if (!window.confirm(`确认删除书签“${bookmark.name}”？`)) return
+    setBusy(true)
+    setNotice(null)
+    try {
+      setBookmarks(await webApi.deleteBookmark(bookmark.id, bookmarks.revision))
+      setNotice({ kind: "success", text: "书签已删除。" })
+    } catch (error) {
+      handleApiError(error, "书签删除失败")
+      throw error
+    } finally {
+      setBusy(false)
+    }
+  }
+
   const loadDashboard = useCallback(async () => {
     const [
       accountResponse,
+      bookmarkResponse,
       automationResponse,
       externalNotificationResponse,
       credentialProfileResponse,
@@ -266,6 +328,7 @@ function App() {
       channelConfigResponse,
     ] = await Promise.all([
       webApi.getAccounts(),
+      webApi.getBookmarks(),
       webApi.getAutomationSettings(),
       webApi.getExternalNotificationSettings(),
       webApi.getCredentialProfiles(),
@@ -275,6 +338,7 @@ function App() {
       webApi.getChannelConfigs(),
     ])
     setAccounts(accountResponse)
+    setBookmarks(bookmarkResponse)
     setAutomation(automationResponse)
     setExternalNotifications(externalNotificationResponse)
     setCredentialProfiles(credentialProfileResponse)
@@ -295,6 +359,7 @@ function App() {
         if (session.authenticated) {
           const [
             accountResponse,
+            bookmarkResponse,
             automationResponse,
             externalNotificationResponse,
             credentialProfileResponse,
@@ -304,6 +369,7 @@ function App() {
             channelConfigResponse,
           ] = await Promise.all([
             webApi.getAccounts(),
+            webApi.getBookmarks(),
             webApi.getAutomationSettings(),
             webApi.getExternalNotificationSettings(),
             webApi.getCredentialProfiles(),
@@ -314,6 +380,7 @@ function App() {
           ])
           if (!cancelled) {
             setAccounts(accountResponse)
+            setBookmarks(bookmarkResponse)
             setAutomation(automationResponse)
             setExternalNotifications(externalNotificationResponse)
             setCredentialProfiles(credentialProfileResponse)
@@ -373,6 +440,7 @@ function App() {
     } finally {
       setAuthenticated(false)
       setAccounts(emptyAccountList)
+      setBookmarks(emptyBookmarkList)
       setSiteAnnouncements(emptySiteAnnouncementList)
       setAutomation(null)
       setHistory(null)
@@ -1101,6 +1169,55 @@ function App() {
     }
   }
 
+  const exportBackup = async (): Promise<WebBackup> => {
+    setBusy(true)
+    try {
+      return await webApi.exportBackup()
+    } catch (error) {
+      handleApiError(error, "备份导出失败")
+      throw error
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const exportAccounts = async () => {
+    setBusy(true)
+    try {
+      return await webApi.exportAccounts()
+    } catch (error) {
+      handleApiError(error, "账户导出失败")
+      throw error
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const restoreBackup = async (backup: WebBackup) => {
+    setBusy(true)
+    try {
+      await webApi.restoreBackup(backup)
+      await loadDashboard()
+    } catch (error) {
+      handleApiError(error, "备份恢复失败")
+      throw error
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const importAccounts = async (data: unknown) => {
+    setBusy(true)
+    try {
+      setAccounts(await webApi.importAccounts(data, accounts.revision))
+    } catch (error) {
+      handleApiError(error, "账户导入失败")
+      throw error
+    } finally {
+      setBusy(false)
+    }
+  }
+
   if (authenticated === null) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-gray-50 text-sm text-gray-500 dark:bg-gray-950">
@@ -1116,6 +1233,7 @@ function App() {
   return (
     <AccountDashboard
       data={accounts}
+      bookmarks={bookmarks}
       tags={tags}
       siteAnnouncements={siteAnnouncements}
       automation={automation}
@@ -1138,6 +1256,10 @@ function App() {
       busy={busy}
       message={notice}
       onCreate={createAccount}
+      onLoadBookmarks={loadBookmarks}
+      onCreateBookmark={createBookmark}
+      onUpdateBookmark={updateBookmark}
+      onDeleteBookmark={deleteBookmark}
       onDetectAccount={detectAccount}
       onUpdate={updateAccount}
       onLoadSiteAnnouncements={loadSiteAnnouncements}
@@ -1193,6 +1315,10 @@ function App() {
       onTestWebDav={testWebDav}
       onUploadWebDavBackup={uploadWebDavBackup}
       onRestoreWebDavBackup={restoreWebDavBackup}
+      onExportBackup={exportBackup}
+      onExportAccounts={exportAccounts}
+      onImportAccounts={importAccounts}
+      onRestoreBackup={restoreBackup}
       onLoadExternalNotifications={loadExternalNotifications}
       onSaveExternalNotifications={saveExternalNotifications}
       onTestExternalNotification={testExternalNotification}

@@ -47,6 +47,28 @@ export function SiteAnnouncementsDialog({
       onClose={onClose}
       title="网站公告"
       description="从已启用账户的站点读取公告，并在服务端保存已读状态。"
+      inlineActions={
+        <>
+          <button
+            type="button"
+            disabled={busy || !announcements?.unreadCount}
+            onClick={() => void onMarkAllRead(siteKey || undefined)}
+            className="flex h-9 items-center gap-2 rounded-md border border-gray-300 px-3 text-sm font-medium hover:bg-gray-50 disabled:opacity-50 dark:border-gray-700 dark:hover:bg-gray-800"
+          >
+            <CheckCheck className="size-4" />
+            全部已读
+          </button>
+          <button
+            type="button"
+            disabled={busy}
+            onClick={() => void onSync()}
+            className="flex h-9 items-center gap-2 rounded-md bg-blue-600 px-3 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-60"
+          >
+            <RefreshCw className="size-4" />
+            {busy ? "正在检查..." : "立即检查"}
+          </button>
+        </>
+      }
       footer={
         <>
           <button

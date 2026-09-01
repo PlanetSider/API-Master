@@ -101,7 +101,7 @@ describe("UsageAnalyticsDialog", () => {
       />,
     )
 
-    expect(screen.getByText("gpt-4o-mini")).toBeInTheDocument()
+    expect(screen.getAllByText("gpt-4o-mini").length).toBeGreaterThan(0)
     expect(screen.getByText(/平均 1.50 秒/)).toBeInTheDocument()
     await user.click(screen.getByRole("checkbox", { name: "主账户" }))
     await user.click(screen.getByRole("button", { name: "应用筛选" }))

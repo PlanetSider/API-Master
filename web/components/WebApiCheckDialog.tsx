@@ -1,13 +1,14 @@
 import { Eye, KeyRound, RefreshCw, ShieldCheck } from "lucide-react"
 import { useEffect, useState } from "react"
 
-import { extractApiCheckCredentialsFromText } from "~/services/verification/webAiApiCheck/extractCredentials"
 import { API_TYPES } from "~/services/verification/aiApiVerification"
 import type {
   ApiVerificationApiType,
   ApiVerificationReport,
 } from "~/services/verification/aiApiVerification"
+import { extractApiCheckCredentialsFromText } from "~/services/verification/webAiApiCheck/extractCredentials"
 import type {
+  WebApiCredentialProfileCreateInput,
   WebApiVerificationInput,
   WebApiVerificationModelsResponse,
   WebApiVerificationResponse,
@@ -25,6 +26,7 @@ interface WebApiCheckDialogProps {
   onRunVerification: (
     input: WebApiVerificationInput,
   ) => Promise<WebApiVerificationResponse>
+  onSaveProfile?: (input: WebApiCredentialProfileCreateInput) => Promise<void>
 }
 
 const apiTypeLabels: Record<ApiVerificationApiType, string> = {
@@ -48,6 +50,7 @@ export function WebApiCheckDialog({
   onClose,
   onFetchModels,
   onRunVerification,
+  onSaveProfile,
 }: WebApiCheckDialogProps) {
   const [sourceText, setSourceText] = useState("")
   const [baseUrl, setBaseUrl] = useState("")
@@ -63,6 +66,8 @@ export function WebApiCheckDialog({
   const [revealed, setRevealed] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
+  const [profileName, setProfileName] = useState("")
+  const [profileNotes, setProfileNotes] = useState("")
 
   useEffect(() => {
     if (!open) return
@@ -127,12 +132,69 @@ export function WebApiCheckDialog({
     }
   }
 
+  const saveProfile = async () => {
+    if (!onSaveProfile) return
+    const input = validateInput()
+    if (!input) return
+    if (!profileName.trim()) {
+      setError("请输入保存名称。")
+      return
+    }
+    setError(null)
+    setNotice(null)
+    try {
+      await onSaveProfile({
+        name: profileName.trim(),
+        apiType: input.apiType,
+        baseUrl: input.baseUrl,
+        apiKey: input.apiKey,
+        notes: profileNotes.trim(),
+      })
+      setNotice(`已保存“${profileName.trim()}”到 API 凭据库。`)
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "保存到 API 凭据库失败")
+    }
+  }
+
   return (
     <WebDialog
       open={open}
       onClose={onClose}
-      title="API 连通性检测"
-      description="可粘贴配置文本自动提取地址和密钥，也可以手动填写。密钥只用于本次请求，不会保存。"
+      title="AI API 功能可用性测试"
+      description="AI API 功能可用性测试。API Key 默认隐藏，除非主动保存到凭据库，否则不会持久化。"
+      inlineActions={
+        <>
+          <button
+            type="button"
+            disabled={busy}
+            onClick={() => void fetchModels()}
+            className="flex h-9 items-center gap-2 rounded-md border border-gray-300 px-3 text-sm font-medium hover:bg-gray-50 disabled:opacity-60 dark:border-gray-700 dark:hover:bg-gray-800"
+          >
+            <RefreshCw className="size-4" />
+            获取模型
+          </button>
+          <button
+            type="button"
+            disabled={busy}
+            onClick={() => void runVerification()}
+            className="flex h-9 items-center gap-2 rounded-md bg-blue-600 px-3 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-60"
+          >
+            <ShieldCheck className="size-4" />
+            开始检测
+          </button>
+          {onSaveProfile ? (
+            <button
+              type="button"
+              disabled={busy}
+              onClick={() => void saveProfile()}
+              className="flex h-9 items-center gap-2 rounded-md border border-gray-300 px-3 text-sm font-medium hover:bg-gray-50 disabled:opacity-60 dark:border-gray-700 dark:hover:bg-gray-800"
+            >
+              <KeyRound className="size-4" />
+              保存到 API 凭据库
+            </button>
+          ) : null}
+        </>
+      }
       footer={
         <>
           <button
@@ -153,6 +215,17 @@ export function WebApiCheckDialog({
             <ShieldCheck className="size-4" />
             开始检测
           </button>
+          {onSaveProfile ? (
+            <button
+              type="button"
+              disabled={busy}
+              onClick={() => void saveProfile()}
+              className="flex h-9 items-center gap-2 rounded-md border border-gray-300 px-3 text-sm font-medium hover:bg-gray-50 disabled:opacity-60 dark:border-gray-700 dark:hover:bg-gray-800"
+            >
+              <KeyRound className="size-4" />
+              保存到 API 凭据库
+            </button>
+          ) : null}
         </>
       }
     >
@@ -163,7 +236,10 @@ export function WebApiCheckDialog({
           </p>
         ) : null}
         {notice ? (
-          <p role="status" className="text-sm text-emerald-600 dark:text-emerald-400">
+          <p
+            role="status"
+            className="text-sm text-emerald-600 dark:text-emerald-400"
+          >
             {notice}
           </p>
         ) : null}
@@ -174,7 +250,7 @@ export function WebApiCheckDialog({
             aria-label="粘贴配置文本"
             value={sourceText}
             onChange={(event) => setSourceText(event.target.value)}
-            placeholder='例如：base_url=https://api.example.com，api_key=sk-...'
+            placeholder="例如：base_url=https://api.example.com，api_key=sk-..."
             rows={3}
             className="w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm outline-none focus:border-blue-500 dark:border-gray-700 dark:bg-gray-950"
           />
@@ -264,11 +340,44 @@ export function WebApiCheckDialog({
           </div>
         </label>
 
+        {onSaveProfile ? (
+          <fieldset className="space-y-3 rounded-md border border-gray-200 p-3 dark:border-gray-700">
+            <legend className="px-1 text-sm font-medium">
+              保存选项（可选）
+            </legend>
+            <p className="text-xs text-gray-500">
+              标签、备注和名称不会影响测试结果，仅用于保存到 API 凭据库。
+            </p>
+            <label className="block space-y-1.5">
+              <span className="text-sm font-medium">凭据名称</span>
+              <input
+                aria-label="凭据名称"
+                value={profileName}
+                onChange={(event) => setProfileName(event.target.value)}
+                placeholder="例如：OpenAI 主账号"
+                className="h-10 w-full rounded-md border border-gray-300 bg-white px-3 text-sm outline-none focus:border-blue-500 dark:border-gray-700 dark:bg-gray-950"
+              />
+            </label>
+            <label className="block space-y-1.5">
+              <span className="text-sm font-medium">备注</span>
+              <textarea
+                aria-label="凭据备注"
+                value={profileNotes}
+                onChange={(event) => setProfileNotes(event.target.value)}
+                rows={2}
+                placeholder="可选备注"
+                className="w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm outline-none focus:border-blue-500 dark:border-gray-700 dark:bg-gray-950"
+              />
+            </label>
+          </fieldset>
+        ) : null}
+
         {report ? (
           <div className="space-y-2">
             <div className="text-xs text-gray-500">
-              {apiTypeLabels[report.apiType]} · 模型 {report.modelId || "未选择"} ·
-              耗时 {report.finishedAt - report.startedAt} ms
+              {apiTypeLabels[report.apiType]} · 模型{" "}
+              {report.modelId || "未选择"} · 耗时{" "}
+              {report.finishedAt - report.startedAt} ms
             </div>
             <div className="divide-y divide-gray-200 rounded-md border border-gray-200 dark:divide-gray-700 dark:border-gray-700">
               {report.results.map((result) => {
@@ -284,7 +393,9 @@ export function WebApiCheckDialog({
                         {result.summary}
                       </div>
                     </div>
-                    <span className={`shrink-0 text-xs font-medium ${status.className}`}>
+                    <span
+                      className={`shrink-0 text-xs font-medium ${status.className}`}
+                    >
                       {status.label}
                     </span>
                   </div>

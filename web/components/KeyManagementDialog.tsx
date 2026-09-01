@@ -10,6 +10,7 @@ interface KeyManagementDialogProps {
   busy: boolean
   keys: WebApiKeyListResponse | null
   createdSecret: string | null
+  title?: string
   onClose: () => void
   onCreate: (name: string) => Promise<void>
   onDelete: (tokenId: number | string) => Promise<void>
@@ -21,6 +22,7 @@ export function KeyManagementDialog({
   busy,
   keys,
   createdSecret,
+  title,
   onClose,
   onCreate,
   onDelete,
@@ -40,7 +42,7 @@ export function KeyManagementDialog({
     <WebDialog
       open={open}
       onClose={onClose}
-      title={keys ? `${keys.accountName} · API 密钥` : "API 密钥"}
+      title={title ?? (keys ? `${keys.accountName} · API 密钥` : "API 密钥")}
       description="密钥列表只显示元数据；新秘密仅在供应方创建响应允许时显示一次。"
     >
       <form onSubmit={submit} className="mb-4 flex gap-2">

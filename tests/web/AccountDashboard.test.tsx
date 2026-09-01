@@ -13,6 +13,7 @@ const createAccount = (
   id: string,
   name: string,
   disabled = false,
+  overrides: Partial<WebAccountSummary> = {},
 ): WebAccountSummary => ({
   id,
   name,
@@ -31,6 +32,7 @@ const createAccount = (
   lastSyncTime: 0,
   createdAt: 0,
   exchangeRate: 7,
+  ...overrides,
 })
 
 const createProps = (): ComponentProps<typeof AccountDashboard> => ({
@@ -214,6 +216,62 @@ describe("AccountDashboard bulk account management", () => {
     await user.click(screen.getByRole("button", { name: "确认批量删除" }))
     expect(props.onBulkAction).toHaveBeenCalledWith(["alpha"], "delete")
   })
+
+  it("filters accounts by site, account, refresh, check-in, and tags", async () => {
+    const user = userEvent.setup()
+    const props = createProps()
+    props.tags = {
+      tags: [{ id: "team", name: "团队", createdAt: 0, updatedAt: 0 }],
+      revision: 1,
+    }
+    props.data = {
+      accounts: [
+        createAccount("alpha", "Alpha", false, {
+          tagIds: ["team"],
+          lastSyncTime: Date.now(),
+          health: { status: SiteHealthStatus.Healthy },
+          checkInStatus: "checked-in",
+        }),
+        createAccount("beta", "Beta", true, {
+          siteType: SITE_TYPES.OPENROUTER,
+          checkInStatus: "unsupported",
+        }),
+      ],
+      revision: 2,
+      lastUpdated: 0,
+    }
+    render(<AccountDashboard {...props} />)
+    await openAccountManagement(user)
+
+    await user.selectOptions(
+      screen.getByRole("combobox", { name: "站点类型" }),
+      SITE_TYPES.OPENROUTER,
+    )
+    expect(screen.getByText("Beta")).toBeInTheDocument()
+    expect(screen.queryByText("Alpha")).not.toBeInTheDocument()
+
+    await user.selectOptions(
+      screen.getByRole("combobox", { name: "站点类型" }),
+      "all",
+    )
+    await user.selectOptions(
+      screen.getByRole("combobox", { name: "账号状态" }),
+      "enabled",
+    )
+    await user.selectOptions(
+      screen.getByRole("combobox", { name: "刷新状态" }),
+      "healthy",
+    )
+    await user.selectOptions(
+      screen.getByRole("combobox", { name: "签到状态" }),
+      "checked-in",
+    )
+    await user.click(screen.getByRole("button", { name: "团队" }))
+
+    expect(screen.getByText("Alpha")).toBeInTheDocument()
+    expect(screen.queryByText("Beta")).not.toBeInTheDocument()
+    expect(screen.getByText("共 1 个账号")).toBeInTheDocument()
+  })
 })
 
 describe("AccountDashboard mobile navigation", () => {
@@ -221,9 +279,7 @@ describe("AccountDashboard mobile navigation", () => {
     render(<AccountDashboard {...createProps()} />)
 
     expect(screen.getByTestId("web-options-overview")).toBeInTheDocument()
-    expect(
-      screen.getByRole("heading", { name: "账户总览" }),
-    ).toBeInTheDocument()
+    expect(screen.getByRole("heading", { name: "总览" })).toBeInTheDocument()
     expect(
       screen.getByRole("heading", { name: "开始使用" }),
     ).toBeInTheDocument()
@@ -238,11 +294,11 @@ describe("AccountDashboard mobile navigation", () => {
     const props = createProps()
     render(<AccountDashboard {...props} />)
 
-    await user.click(screen.getByRole("button", { name: "自动刷新" }))
+    await user.click(screen.getByRole("button", { name: "自动签到" }))
 
-    expect(window.location.hash).toBe("#automation")
+    expect(window.location.hash).toBe("#autoCheckin")
     expect(
-      screen.getByRole("heading", { name: "自动刷新" }),
+      screen.getByRole("heading", { name: "自动签到" }),
     ).toBeInTheDocument()
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument()
   })
@@ -251,13 +307,11 @@ describe("AccountDashboard mobile navigation", () => {
     const user = userEvent.setup()
     render(<AccountDashboard {...createProps()} />)
 
-    await user.click(screen.getAllByRole("button", { name: "基础设置" })[0]!)
+    await user.click(screen.getAllByRole("button", { name: "设置" })[0]!)
 
     expect(window.location.hash).toBe("#basic")
-    expect(
-      screen.getByRole("heading", { name: "基础设置" }),
-    ).toBeInTheDocument()
-    expect(screen.getByRole("button", { name: "显示偏好" })).toBeInTheDocument()
+    expect(screen.getByRole("heading", { name: "设置" })).toBeInTheDocument()
+    expect(screen.getByText("显示偏好")).toBeInTheDocument()
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument()
   })
 
@@ -296,12 +350,24 @@ describe("AccountDashboard mobile navigation", () => {
       name: "移动端主导航",
     })
     await user.click(
-      within(navigation).getByRole("button", { name: "模型总览" }),
+      within(navigation).getByRole("button", { name: "模型列表" }),
     )
 
     expect(props.onLoadAllModels).toHaveBeenCalledOnce()
     expect(
       screen.queryByRole("navigation", { name: "移动端主导航" }),
     ).not.toBeInTheDocument()
+  })
+
+  it("loads page data when opening a canonical hash directly", async () => {
+    window.history.replaceState(null, "", "#models")
+    const props = createProps()
+
+    render(<AccountDashboard {...props} />)
+
+    expect(
+      await screen.findByRole("heading", { name: "模型列表" }),
+    ).toBeInTheDocument()
+    expect(props.onLoadAllModels).toHaveBeenCalledOnce()
   })
 })
