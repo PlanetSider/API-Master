@@ -3,13 +3,21 @@ import {
   ACCOUNT_SITE_ADAPTER_FAMILIES,
   getAccountSiteDefinition,
 } from "~/services/accountSiteDefinitions"
+import { getSiteTypeCapabilities } from "~/services/apiAdapters/registry"
 import type { ApiServiceRequest } from "~/services/apiTransport/type"
+import {
+  MODEL_PRICE_PRECISION_KINDS,
+  type ModelPricing,
+  type PricingResponse,
+} from "~/services/modelList/pricingModel"
 import type { ModelDescriptor } from "~/services/models/modelDescriptor"
 import { toSanitizedErrorSummary } from "~/services/verification/aiApiVerification/utils"
 import type { SiteAccount } from "~/types"
 import type {
   WebAccountModelCatalogResult,
   WebAllModelCatalogResponse,
+  WebModelCatalogModel,
+  WebModelCatalogPrice,
   WebModelCatalogResponse,
 } from "~/web/contracts"
 
@@ -35,6 +43,7 @@ const toResponse = (
   accountId: account.id,
   accountName: account.site_name,
   supported: true,
+  supportsPricing: false,
   models: Array.from(
     new Map(
       descriptors.map((value) => {
@@ -53,44 +62,225 @@ const toResponse = (
   ).sort((left, right) => left.id.localeCompare(right.id)),
 })
 
+const NEW_API_RATIO_BASE_USD_PER_MILLION_TOKENS = 2
+const DONE_HUB_TOKEN_TO_CALL_RATIO = 0.002
+
+const isFiniteNonnegative = (value: unknown): value is number =>
+  typeof value === "number" && Number.isFinite(value) && value >= 0
+
+const toUnavailablePrice = (
+  model: ModelPricing,
+  group?: string,
+  groupRatio = 1,
+  unavailableReason?: string,
+): WebModelCatalogPrice => ({
+  billingMode: model.quota_type === 0 ? "token" : "per-call",
+  ...(group ? { group } : {}),
+  groupRatio,
+  precision: "unavailable",
+  ...(model.price_metadata?.source
+    ? { source: model.price_metadata.source }
+    : {}),
+  ...(unavailableReason ? { unavailableReason } : {}),
+})
+
+const calculatePrice = (
+  model: ModelPricing,
+  group: string | undefined,
+  groupRatio: number,
+): WebModelCatalogPrice => {
+  if (
+    model.price_metadata?.precision === MODEL_PRICE_PRECISION_KINDS.UNAVAILABLE
+  ) {
+    return toUnavailablePrice(
+      model,
+      group,
+      groupRatio,
+      model.price_metadata.unavailable_reason,
+    )
+  }
+
+  const metadata = {
+    ...(group ? { group } : {}),
+    groupRatio,
+    ...(model.price_metadata?.precision
+      ? { precision: model.price_metadata.precision }
+      : {}),
+    ...(model.price_metadata?.source
+      ? { source: model.price_metadata.source }
+      : {}),
+  }
+
+  if (model.quota_type === 0) {
+    const ratioInput =
+      model.model_ratio * NEW_API_RATIO_BASE_USD_PER_MILLION_TOKENS * groupRatio
+    const directInput = model.token_price_usd_per_million?.input
+    const directOutput = model.token_price_usd_per_million?.output
+    const input = isFiniteNonnegative(directInput) ? directInput : ratioInput
+    const output = isFiniteNonnegative(directOutput)
+      ? directOutput
+      : input * model.completion_ratio
+
+    if (!isFiniteNonnegative(input) || !isFiniteNonnegative(output)) {
+      return toUnavailablePrice(model, group, groupRatio, "invalid-price")
+    }
+
+    const directCacheRead = model.token_price_usd_per_million?.cache_read
+    const directCacheWrite = model.token_price_usd_per_million?.cache_write
+    const cacheReadRatio = model.token_price_ratios_to_input?.cache_read
+    const cacheWriteRatio = model.token_price_ratios_to_input?.cache_write
+    const cacheRead = isFiniteNonnegative(directCacheRead)
+      ? directCacheRead
+      : isFiniteNonnegative(cacheReadRatio)
+        ? input * cacheReadRatio
+        : undefined
+    const cacheWrite = isFiniteNonnegative(directCacheWrite)
+      ? directCacheWrite
+      : isFiniteNonnegative(cacheWriteRatio)
+        ? input * cacheWriteRatio
+        : undefined
+
+    return {
+      billingMode: "token",
+      ...metadata,
+      inputUsdPerMillionTokens: input,
+      outputUsdPerMillionTokens: output,
+      ...(cacheRead === undefined
+        ? {}
+        : { cacheReadUsdPerMillionTokens: cacheRead }),
+      ...(cacheWrite === undefined
+        ? {}
+        : { cacheWriteUsdPerMillionTokens: cacheWrite }),
+    }
+  }
+
+  if (typeof model.model_price === "number") {
+    if (!isFiniteNonnegative(model.model_price)) {
+      return toUnavailablePrice(model, group, groupRatio, "invalid-price")
+    }
+    return {
+      billingMode: "per-call",
+      ...metadata,
+      usdPerCall: model.model_price * groupRatio,
+    }
+  }
+
+  if (
+    !isFiniteNonnegative(model.model_price.input) ||
+    !isFiniteNonnegative(model.model_price.output)
+  ) {
+    return toUnavailablePrice(model, group, groupRatio, "invalid-price")
+  }
+
+  return {
+    billingMode: "per-call",
+    ...metadata,
+    usdPerCall: {
+      input:
+        model.model_price.input * groupRatio * DONE_HUB_TOKEN_TO_CALL_RATIO,
+      output:
+        model.model_price.output * groupRatio * DONE_HUB_TOKEN_TO_CALL_RATIO,
+    },
+  }
+}
+
+const resolveModelPrices = (
+  model: ModelPricing,
+  pricing: PricingResponse,
+): WebModelCatalogPrice[] => {
+  const groupRatios = new Map(
+    Object.entries(pricing.group_ratio ?? {}).filter((entry) =>
+      isFiniteNonnegative(entry[1]),
+    ) as Array<[string, number]>,
+  )
+  if (groupRatios.size === 0) {
+    return [calculatePrice(model, undefined, 1)]
+  }
+
+  const usableGroups = new Set(Object.keys(pricing.usable_group ?? {}))
+  const modelGroups = Array.from(new Set(model.enable_groups ?? []))
+  const candidates = (modelGroups.length > 0 ? modelGroups : [...usableGroups])
+    .filter((group) => usableGroups.size === 0 || usableGroups.has(group))
+    .flatMap((group) => {
+      const ratio = groupRatios.get(group)
+      return ratio === undefined ? [] : [{ group, ratio }]
+    })
+
+  if (candidates.length === 0) {
+    return [toUnavailablePrice(model, undefined, 1, "group-ratio-unavailable")]
+  }
+
+  return candidates.map(({ group, ratio }) =>
+    calculatePrice(model, group, ratio),
+  )
+}
+
+const toPricedResponse = (
+  account: SiteAccount,
+  pricing: PricingResponse,
+): WebModelCatalogResponse => {
+  const models = Array.from(
+    new Map(
+      pricing.data.map((model) => {
+        const item: WebModelCatalogModel = {
+          id: model.model_name,
+          ...(model.display_name ? { displayName: model.display_name } : {}),
+          ...(model.vendorEvidence?.name
+            ? { vendor: model.vendorEvidence.name }
+            : {}),
+          ...(model.model_description
+            ? { description: model.model_description }
+            : {}),
+          enableGroups: Array.from(new Set(model.enable_groups ?? [])).sort(),
+          supportedEndpointTypes: Array.from(
+            new Set(model.supported_endpoint_types ?? []),
+          ).sort(),
+          prices: resolveModelPrices(model, pricing),
+        }
+        return [item.id, item] as const
+      }),
+    ).values(),
+  ).sort((left, right) => left.id.localeCompare(right.id))
+
+  return {
+    accountId: account.id,
+    accountName: account.site_name,
+    supported: true,
+    supportsPricing: models.some((model) =>
+      model.prices?.some((price) => price.precision !== "unavailable"),
+    ),
+    models,
+  }
+}
+
 export class ModelCatalogService {
   async fetch(account: SiteAccount): Promise<WebModelCatalogResponse> {
     await assertSafeUpstreamUrl(account.site_url, "Account")
     const request = createRequest(account)
-    if (account.site_type === SITE_TYPES.OPENROUTER) {
-      const { openRouterProviderModelCatalog } = await import(
-        "~/services/apiAdapters/openrouter/providerModelCatalog"
-      )
-      const personalized = openRouterProviderModelCatalog.personalized
-      if (!personalized) {
-        return {
-          accountId: account.id,
-          accountName: account.site_name,
-          supported: false,
-          models: [],
-        }
-      }
-      const pricing = await personalized.fetchPricing({
-        accountId: account.id,
-        credential: account.account_info.access_token,
-      })
-      return {
-        accountId: account.id,
-        accountName: account.site_name,
-        supported: true,
-        models: Array.from(
-          new Map(
-            pricing.data.map((model) => [
-              model.model_name,
-              {
-                id: model.model_name,
-                ...(model.vendorEvidence?.name
-                  ? { vendor: model.vendorEvidence.name }
-                  : {}),
-              },
-            ]),
-          ).values(),
-        ).sort((left, right) => left.id.localeCompare(right.id)),
+    const accountCapabilities = getSiteTypeCapabilities(
+      account.site_type,
+    ).account
+
+    if (accountCapabilities?.providerModelCatalog) {
+      const catalog = accountCapabilities.providerModelCatalog
+      const pricing = catalog.personalized
+        ? await catalog.personalized.fetchPricing({
+            accountId: account.id,
+            credential: account.account_info.access_token,
+          })
+        : await catalog.fetchPricing({})
+      return toPricedResponse(account, pricing)
+    }
+
+    if (accountCapabilities?.modelPricing) {
+      try {
+        return toPricedResponse(
+          account,
+          await accountCapabilities.modelPricing.fetchPricing(request),
+        )
+      } catch {
+        // Keep runtime model discovery available when a site's pricing route
+        // is missing or temporarily unavailable.
       }
     }
     if (account.site_type === SITE_TYPES.SUB2API) {
@@ -190,6 +380,7 @@ export class ModelCatalogService {
           siteType: account.site_type,
           disabled: false,
           status: catalog.supported ? "success" : "unsupported",
+          supportsPricing: catalog.supportsPricing,
           models: catalog.models,
         } satisfies WebAccountModelCatalogResult
       } catch (error) {
@@ -230,30 +421,41 @@ export class ModelCatalogService {
       string,
       {
         id: string
+        displayName?: string
         vendor?: string
-        accounts: Array<{ accountId: string; accountName: string }>
+        description?: string
+        accounts: WebAllModelCatalogResponse["models"][number]["accounts"]
       }
     >()
     for (const account of results) {
       for (const model of account.models) {
         const existing = modelMap.get(model.id)
+        const { id: _id, ...modelDetails } = model
+        const offer = {
+          accountId: account.accountId,
+          accountName: account.accountName,
+          siteType: account.siteType,
+          exchangeRate: accounts.find((item) => item.id === account.accountId)
+            ?.exchange_rate,
+          ...modelDetails,
+        }
         if (existing) {
-          existing.accounts.push({
-            accountId: account.accountId,
-            accountName: account.accountName,
-          })
+          existing.accounts.push(offer)
+          if (!existing.displayName && model.displayName) {
+            existing.displayName = model.displayName
+          }
           if (!existing.vendor && model.vendor) existing.vendor = model.vendor
+          if (!existing.description && model.description) {
+            existing.description = model.description
+          }
           continue
         }
         modelMap.set(model.id, {
           id: model.id,
+          ...(model.displayName ? { displayName: model.displayName } : {}),
           ...(model.vendor ? { vendor: model.vendor } : {}),
-          accounts: [
-            {
-              accountId: account.accountId,
-              accountName: account.accountName,
-            },
-          ],
+          ...(model.description ? { description: model.description } : {}),
+          accounts: [offer],
         })
       }
     }

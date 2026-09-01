@@ -13,10 +13,16 @@ import { server as mockServer } from "~~/tests/msw/server"
 describe("Web model catalog transport", () => {
   let upstream: Server
   let baseUrl: string
+  let pricingPayload: unknown
 
   beforeEach(async () => {
+    pricingPayload = undefined
     upstream = createServer((request, response) => {
       response.setHeader("Content-Type", "application/json")
+      if (request.url === "/api/pricing" && pricingPayload) {
+        response.end(JSON.stringify(pricingPayload))
+        return
+      }
       if (request.url === "/api/user/models") {
         response.end(
           JSON.stringify({
@@ -56,6 +62,77 @@ describe("Web model catalog transport", () => {
     expect(result).toMatchObject({
       supported: true,
       models: [{ id: "claude-3-5-sonnet" }, { id: "gpt-4o-mini" }],
+    })
+  })
+
+  it("returns account-specific prices for Web price comparison", async () => {
+    pricingPayload = {
+      success: true,
+      data: [
+        {
+          model_name: "GLM-5.2-Base",
+          display_name: "GLM 5.2 Base",
+          model_description: "Comparable model",
+          vendor_id: 7,
+          quota_type: 0,
+          model_ratio: 1,
+          model_price: 0,
+          completion_ratio: 2,
+          enable_groups: ["default", "vip"],
+          supported_endpoint_types: ["/v1/chat/completions"],
+        },
+      ],
+      group_ratio: { default: 1, vip: 0.5 },
+      usable_group: { default: {}, vip: {} },
+      vendors: [{ id: 7, name: "智谱 AI" }],
+    }
+    const account = createWebAccount({
+      name: "Priced account",
+      baseUrl,
+      siteType: SITE_TYPES.NEW_API,
+      authType: AuthTypeEnum.AccessToken,
+      accessToken: "pricing-token",
+    })
+
+    const service = new ModelCatalogService()
+    const result = await service.fetch(account)
+
+    expect(result).toMatchObject({
+      supported: true,
+      supportsPricing: true,
+      models: [
+        {
+          id: "GLM-5.2-Base",
+          displayName: "GLM 5.2 Base",
+          vendor: "智谱 AI",
+          enableGroups: ["default", "vip"],
+          supportedEndpointTypes: ["/v1/chat/completions"],
+          prices: [
+            {
+              billingMode: "token",
+              group: "default",
+              groupRatio: 1,
+              inputUsdPerMillionTokens: 2,
+              outputUsdPerMillionTokens: 4,
+            },
+            {
+              billingMode: "token",
+              group: "vip",
+              groupRatio: 0.5,
+              inputUsdPerMillionTokens: 1,
+              outputUsdPerMillionTokens: 2,
+            },
+          ],
+        },
+      ],
+    })
+
+    const aggregate = await service.fetchMany([account])
+    expect(aggregate.models[0]?.accounts[0]).toMatchObject({
+      accountId: account.id,
+      accountName: "Priced account",
+      exchangeRate: account.exchange_rate,
+      prices: expect.any(Array),
     })
   })
 
@@ -117,11 +194,25 @@ describe("Web model catalog transport", () => {
     expect(result.models).toEqual([
       {
         id: "First",
-        accounts: [{ accountId: first.id, accountName: "First" }],
+        accounts: [
+          {
+            accountId: first.id,
+            accountName: "First",
+            siteType: SITE_TYPES.NEW_API,
+            exchangeRate: first.exchange_rate,
+          },
+        ],
       },
       {
         id: "shared-model",
-        accounts: [{ accountId: first.id, accountName: "First" }],
+        accounts: [
+          {
+            accountId: first.id,
+            accountName: "First",
+            siteType: SITE_TYPES.NEW_API,
+            exchangeRate: first.exchange_rate,
+          },
+        ],
       },
     ])
   })

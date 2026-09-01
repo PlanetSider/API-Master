@@ -549,14 +549,40 @@ export interface WebNotificationListResponse {
   revision: number
 }
 
+export interface WebModelCatalogPrice {
+  billingMode: "token" | "per-call"
+  group?: string
+  groupRatio: number
+  precision?: "exact" | "estimated" | "unavailable"
+  source?:
+    | "none"
+    | "official-rate-estimate"
+    | "channel-pricing"
+    | "provider-catalog"
+  unavailableReason?: string
+  inputUsdPerMillionTokens?: number
+  outputUsdPerMillionTokens?: number
+  cacheReadUsdPerMillionTokens?: number
+  cacheWriteUsdPerMillionTokens?: number
+  usdPerCall?: number | { input: number; output: number }
+}
+
+export interface WebModelCatalogModel {
+  id: string
+  displayName?: string
+  vendor?: string
+  description?: string
+  enableGroups?: string[]
+  supportedEndpointTypes?: string[]
+  prices?: WebModelCatalogPrice[]
+}
+
 export interface WebModelCatalogResponse {
   accountId: string
   accountName: string
   supported: boolean
-  models: Array<{
-    id: string
-    vendor?: string
-  }>
+  supportsPricing?: boolean
+  models: WebModelCatalogModel[]
 }
 
 export type WebAccountModelCatalogStatus =
@@ -571,22 +597,27 @@ export interface WebAccountModelCatalogResult {
   siteType: AccountSiteType
   disabled: boolean
   status: WebAccountModelCatalogStatus
-  models: Array<{
-    id: string
-    vendor?: string
-  }>
+  supportsPricing?: boolean
+  models: WebModelCatalogModel[]
   error?: string
+}
+
+export interface WebAllModelCatalogOffer
+  extends Omit<WebModelCatalogModel, "id"> {
+  accountId: string
+  accountName: string
+  siteType: AccountSiteType
+  exchangeRate?: number
 }
 
 export interface WebAllModelCatalogResponse {
   accounts: WebAccountModelCatalogResult[]
   models: Array<{
     id: string
+    displayName?: string
     vendor?: string
-    accounts: Array<{
-      accountId: string
-      accountName: string
-    }>
+    description?: string
+    accounts: WebAllModelCatalogOffer[]
   }>
   startedAt: number
   finishedAt: number
