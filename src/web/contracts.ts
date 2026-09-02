@@ -572,6 +572,23 @@ export interface WebModelCatalogModel {
   displayName?: string
   vendor?: string
   description?: string
+  metadata?: {
+    capabilities?: {
+      attachment?: boolean
+      reasoning?: boolean
+      toolCall?: boolean
+      structuredOutput?: boolean
+    }
+    modalities?: {
+      input: string[]
+      output: string[]
+    }
+    limits?: {
+      context?: number
+      input?: number
+      output?: number
+    }
+  }
   enableGroups?: string[]
   supportedEndpointTypes?: string[]
   prices?: WebModelCatalogPrice[]
@@ -607,6 +624,8 @@ export interface WebAllModelCatalogOffer
   accountId: string
   accountName: string
   siteType: AccountSiteType
+  /** Public account origin used by model-list source actions; never contains credentials. */
+  sourceUrl?: string
   exchangeRate?: number
 }
 

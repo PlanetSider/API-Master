@@ -56,6 +56,8 @@ export function ImportExportPage({
   const [error, setError] = useState<string | null>(null)
   const [status, setStatus] = useState<string | null>(null)
   const [fileMode, setFileMode] = useState<"backup" | "accounts">("backup")
+  const [selectedFileName, setSelectedFileName] = useState("")
+  const [selectedFileText, setSelectedFileText] = useState("")
 
   const exportBackup = async () => {
     setError(null)
@@ -130,8 +132,7 @@ export function ImportExportPage({
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">导入/导出</h1>
           <p className="mt-2 text-sm text-gray-600 dark:text-gray-300">
-            管理账户、凭据和 Web
-            设置的本地备份。导出的文件包含敏感信息，请妥善保管。
+            备份和恢复插件数据
           </p>
         </div>
       </div>
@@ -151,25 +152,77 @@ export function ImportExportPage({
       ) : null}
 
       <div className="grid gap-6 lg:grid-cols-2">
-        <section className="rounded-lg border border-gray-200 bg-white p-5 dark:border-gray-700 dark:bg-gray-900">
-          <div className="flex items-center gap-3">
-            <ArrowDownToLine className="size-5 text-blue-600" />
+        <section className="overflow-hidden rounded-md border border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-900">
+          <div className="flex items-center gap-3 border-b border-gray-200 px-4 py-3 dark:border-gray-700">
+            <ArrowUpFromLine className="size-5 text-emerald-600" />
             <div>
               <h2 className="text-base font-semibold">导出数据</h2>
               <p className="mt-1 text-sm text-gray-500">
-                下载可迁移到其他 Web 实例的 JSON 文件。
+                将数据导出为 JSON 文件进行备份。
               </p>
             </div>
           </div>
-          <div className="mt-5 flex flex-wrap gap-2">
+          <div className="divide-y divide-gray-200 dark:divide-gray-700">
+            <div className="flex items-center justify-between gap-4 px-4 py-4">
+              <div>
+                <div className="text-sm font-medium">完整导出</div>
+                <p className="mt-1 text-xs text-gray-500">
+                  手动完整 JSON 导出会以明文包含已保存的账号凭据和用户设置。
+                </p>
+              </div>
+              <button
+                type="button"
+                disabled={busy}
+                onClick={() => void exportBackup()}
+                className="inline-flex h-9 shrink-0 items-center gap-2 rounded-md bg-emerald-600 px-3 text-sm font-medium text-white hover:bg-emerald-700 disabled:opacity-60"
+              >
+                <FileJson className="size-4" />
+                导出
+              </button>
+            </div>
+            <div className="flex items-center justify-between gap-4 px-4 py-4">
+              <div>
+                <div className="text-sm font-medium">账号数据</div>
+                <p className="mt-1 text-xs text-gray-500">
+                  手动导出账号和密钥 JSON，便于迁移到其他实例。
+                </p>
+              </div>
+              <button
+                type="button"
+                disabled={busy}
+                onClick={() => void exportAccounts()}
+                className="inline-flex h-9 shrink-0 items-center gap-2 rounded-md bg-blue-600 px-3 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-60"
+              >
+                <ArrowDownToLine className="size-4" />
+                导出
+              </button>
+            </div>
+            <div className="flex items-center justify-between gap-4 px-4 py-4">
+              <div>
+                <div className="text-sm font-medium">用户设置</div>
+                <p className="mt-1 text-xs text-gray-500">
+                  仅导出界面设置和偏好配置。
+                </p>
+              </div>
+              <button
+                type="button"
+                disabled={busy}
+                onClick={() => void exportBackup()}
+                className="inline-flex h-9 shrink-0 items-center gap-2 rounded-md border border-gray-300 px-3 text-sm font-medium hover:bg-gray-50 disabled:opacity-60 dark:border-gray-700 dark:hover:bg-gray-800"
+              >
+                导出
+              </button>
+            </div>
+          </div>
+          <div className="hidden">
             <button
               type="button"
               disabled={busy}
               onClick={() => void exportBackup()}
-              className="inline-flex h-9 items-center gap-2 rounded-md bg-blue-600 px-3 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-60"
+              className="inline-flex h-9 items-center gap-2 rounded-md bg-emerald-600 px-3 text-sm font-medium text-white hover:bg-emerald-700 disabled:opacity-60"
             >
               <FileJson className="size-4" />
-              完整备份
+              完整导出
             </button>
             <button
               type="button"
@@ -178,7 +231,7 @@ export function ImportExportPage({
               className="inline-flex h-9 items-center gap-2 rounded-md border border-gray-300 px-3 text-sm font-medium hover:bg-gray-50 dark:border-gray-700 dark:hover:bg-gray-800"
             >
               <ArrowDownToLine className="size-4" />
-              账户数据
+              账号数据
             </button>
             <button
               type="button"
@@ -192,44 +245,81 @@ export function ImportExportPage({
               <ArrowUpFromLine className="size-4" />
               导入账户
             </button>
+            <button
+              type="button"
+              disabled={busy}
+              onClick={() => void exportBackup()}
+              className="inline-flex h-9 items-center gap-2 rounded-md border border-gray-300 px-3 text-sm font-medium hover:bg-gray-50 dark:border-gray-700 dark:hover:bg-gray-800"
+            >
+              用户设置
+            </button>
           </div>
         </section>
 
-        <section className="rounded-lg border border-gray-200 bg-white p-5 dark:border-gray-700 dark:bg-gray-900">
-          <div className="flex items-center gap-3">
+        <section className="overflow-hidden rounded-md border border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-900">
+          <div className="flex items-center gap-3 border-b border-gray-200 px-4 py-3 dark:border-gray-700">
             <ArrowUpFromLine className="size-5 text-blue-600" />
             <div>
-              <h2 className="text-base font-semibold">导入备份</h2>
-              <p className="mt-1 text-sm text-gray-500">
-                从之前导出的完整备份恢复 Web 配置。
-              </p>
+              <h2 className="text-base font-semibold">导入数据</h2>
+              <p className="mt-1 text-sm text-gray-500">从备份文件恢复数据。</p>
             </div>
           </div>
-          <input
-            ref={inputRef}
-            type="file"
-            accept="application/json,.json"
-            className="sr-only"
-            onChange={(event) => {
-              const file = event.target.files?.[0]
-              if (file) {
+          <div className="p-4">
+            <div className="text-xs font-medium text-gray-600 dark:text-gray-300">
+              选择备份文件
+            </div>
+            <input
+              ref={inputRef}
+              type="file"
+              accept="application/json,.json"
+              className="sr-only"
+              onChange={async (event) => {
+                const file = event.target.files?.[0]
+                if (file) {
+                  setSelectedFileName(file.name)
+                  setSelectedFileText(await file.text())
+                }
+              }}
+            />
+            <button
+              type="button"
+              disabled={busy}
+              onClick={() => {
+                setFileMode("backup")
+                inputRef.current?.click()
+              }}
+              className="mt-5 inline-flex h-9 items-center gap-2 rounded-md border border-gray-300 px-3 text-sm font-medium hover:bg-gray-50 disabled:opacity-60 dark:border-gray-700 dark:hover:bg-gray-800"
+            >
+              <ArrowUpFromLine className="size-4" />
+              选择备份文件
+            </button>
+            <span className="ml-3 text-xs text-gray-500">
+              {selectedFileName || "未选择任何文件"}
+            </span>
+            <textarea
+              value={selectedFileText}
+              onChange={(event) => setSelectedFileText(event.target.value)}
+              rows={5}
+              placeholder="粘贴 JSON 数据或通过上面的文件选择器导入..."
+              className="mt-4 w-full resize-none rounded-md border border-gray-300 bg-gray-50 p-3 text-sm dark:border-gray-700 dark:bg-gray-950"
+            />
+            <button
+              type="button"
+              disabled={busy || !selectedFileText.trim()}
+              onClick={() => {
+                const file = new File(
+                  [selectedFileText],
+                  selectedFileName || "backup.json",
+                  { type: "application/json" },
+                )
                 if (fileMode === "accounts") void importAccounts(file)
                 else void importBackup(file)
-              }
-            }}
-          />
-          <button
-            type="button"
-            disabled={busy}
-            onClick={() => {
-              setFileMode("backup")
-              inputRef.current?.click()
-            }}
-            className="mt-5 inline-flex h-9 items-center gap-2 rounded-md border border-gray-300 px-3 text-sm font-medium hover:bg-gray-50 disabled:opacity-60 dark:border-gray-700 dark:hover:bg-gray-800"
-          >
-            <ArrowUpFromLine className="size-4" />
-            选择备份文件
-          </button>
+              }}
+              className="mt-3 h-9 w-full rounded-md bg-blue-600 px-3 text-sm font-medium text-white hover:bg-blue-700 disabled:bg-blue-300"
+            >
+              导入
+            </button>
+          </div>
         </section>
       </div>
 
@@ -249,6 +339,7 @@ export function ImportExportPage({
             onTest={onTestWebDav}
             onUpload={onUploadWebDav}
             onRestore={onRestoreWebDav}
+            presentation="page"
           />
         ) : (
           <div className="rounded-lg border border-gray-200 px-4 py-8 text-center text-sm text-gray-500 dark:border-gray-700">

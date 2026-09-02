@@ -11,6 +11,7 @@ import {
   type PricingResponse,
 } from "~/services/modelList/pricingModel"
 import type { ModelDescriptor } from "~/services/models/modelDescriptor"
+import { modelMetadataService } from "~/services/models/modelMetadata"
 import { toSanitizedErrorSummary } from "~/services/verification/aiApiVerification/utils"
 import type { SiteAccount } from "~/types"
 import type {
@@ -353,6 +354,7 @@ export class ModelCatalogService {
     options: { concurrency?: number } = {},
   ): Promise<WebAllModelCatalogResponse> {
     const startedAt = Date.now()
+    await modelMetadataService.initialize()
     const results: WebAccountModelCatalogResult[] = Array(accounts.length)
     const concurrency = Math.max(
       1,
@@ -429,15 +431,44 @@ export class ModelCatalogService {
     >()
     for (const account of results) {
       for (const model of account.models) {
+        const metadataResult = modelMetadataService.resolveModelIdentity(
+          model.id,
+        )
+        const metadata =
+          metadataResult.state === "resolved"
+            ? {
+                ...(metadataResult.metadata.capabilities
+                  ? {
+                      capabilities: {
+                        ...metadataResult.metadata.capabilities,
+                      },
+                    }
+                  : {}),
+                ...(metadataResult.metadata.modalities
+                  ? {
+                      modalities: {
+                        input: [...metadataResult.metadata.modalities.input],
+                        output: [...metadataResult.metadata.modalities.output],
+                      },
+                    }
+                  : {}),
+                ...(metadataResult.metadata.limits
+                  ? { limits: { ...metadataResult.metadata.limits } }
+                  : {}),
+              }
+            : undefined
         const existing = modelMap.get(model.id)
         const { id: _id, ...modelDetails } = model
         const offer = {
           accountId: account.accountId,
           accountName: account.accountName,
           siteType: account.siteType,
+          sourceUrl: accounts.find((item) => item.id === account.accountId)
+            ?.site_url,
           exchangeRate: accounts.find((item) => item.id === account.accountId)
             ?.exchange_rate,
           ...modelDetails,
+          ...(metadata ? { metadata } : {}),
         }
         if (existing) {
           existing.accounts.push(offer)

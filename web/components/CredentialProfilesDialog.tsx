@@ -287,23 +287,25 @@ export function CredentialProfilesDialog({
         inlineActions={
           <button
             type="button"
+            aria-label="新增凭据"
             disabled={busy}
             onClick={openCreate}
             className="flex h-9 items-center gap-2 rounded-md bg-blue-600 px-3 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-60"
           >
             <Plus className="size-4" />
-            新增凭据
+            添加 API 凭据
           </button>
         }
         footer={
           <button
             type="button"
+            aria-label="新增凭据"
             disabled={busy}
             onClick={openCreate}
             className="flex h-9 items-center gap-2 rounded-md bg-blue-600 px-3 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-60"
           >
             <Plus className="size-4" />
-            新增凭据
+            添加 API 凭据
           </button>
         }
       >
@@ -325,49 +327,13 @@ export function CredentialProfilesDialog({
           </div>
         ) : (
           <>
-            <div className="mb-4 grid grid-cols-2 gap-px overflow-hidden rounded-md border border-gray-200 bg-gray-200 sm:grid-cols-4 dark:border-gray-700 dark:bg-gray-700">
-              {[
-                ["凭证总数", String(profiles?.profiles.length ?? 0)],
-                [
-                  "Base URL",
-                  String(
-                    new Set(
-                      (profiles?.profiles ?? []).map(
-                        (profile) => profile.baseUrl,
-                      ),
-                    ).size,
-                  ),
-                ],
-                [
-                  "使用标签",
-                  String(
-                    new Set(
-                      (profiles?.profiles ?? []).flatMap(
-                        (profile) => profile.tagIds,
-                      ),
-                    ).size,
-                  ),
-                ],
-                ["当前结果", String(visibleProfiles.length)],
-              ].map(([label, value]) => (
-                <div
-                  key={label}
-                  className="bg-white px-3 py-3 dark:bg-gray-900"
-                >
-                  <div className="text-xs text-gray-500">{label}</div>
-                  <div className="mt-1 text-base font-semibold tabular-nums">
-                    {value}
-                  </div>
-                </div>
-              ))}
-            </div>
-            <div className="mb-4 grid gap-3 sm:grid-cols-[minmax(0,2fr)_minmax(10rem,1fr)_auto]">
+            <div className="mb-4 grid gap-3 sm:grid-cols-[minmax(0,2fr)_minmax(14rem,1fr)]">
               <label className="relative block">
                 <Search className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-gray-400" />
                 <input
                   value={search}
                   onChange={(event) => setSearch(event.target.value)}
-                  placeholder="搜索名称、地址或类型"
+                  placeholder="按名称、Base URL、标签或备注搜索"
                   aria-label="搜索 API 凭据"
                   className="h-9 w-full rounded-md border border-gray-300 bg-white pr-3 pl-9 text-sm outline-none focus:border-blue-500 dark:border-gray-700 dark:bg-gray-950"
                 />
@@ -384,9 +350,6 @@ export function CredentialProfilesDialog({
                 <option value="anthropic">Anthropic</option>
                 <option value="google">Google / Gemini</option>
               </select>
-              <span className="self-center text-xs text-gray-500 sm:text-right">
-                {visibleProfiles.length} / {profiles?.profiles.length ?? 0}
-              </span>
             </div>
             {tags.length > 0 ? (
               <div className="mb-4 flex flex-wrap items-center gap-1.5">
@@ -502,7 +465,7 @@ export function CredentialProfilesDialog({
                         {selectedEndpointProfiles.length} 份 API 凭据
                       </div>
                     </div>
-                    <div className="grid gap-3 p-3 lg:grid-cols-2">
+                    <div className="grid gap-3 p-3">
                       {selectedEndpointProfiles.map((profile) => (
                         <div
                           key={profile.id}

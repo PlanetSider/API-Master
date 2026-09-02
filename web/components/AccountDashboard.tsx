@@ -1,22 +1,33 @@
 import {
   Activity,
   ArrowDown,
+  ArrowLeftRight,
   ArrowUp,
   Bell,
   Bookmark,
   Boxes,
   CalendarCheck2,
+  ChartLine,
   ChartNoAxesCombined,
   ChevronsLeft,
   ChevronsRight,
-  Cloud,
+  Cpu,
   Database,
+  Ellipsis,
+  ExternalLink,
   History,
   Info,
   KeyRound,
+  Languages,
+  Layers3,
   LayoutDashboard,
+  LibraryBig,
+  ListOrdered,
   LogOut,
+  Megaphone,
   Menu,
+  MessageSquare,
+  Monitor,
   Palette,
   Pencil,
   Pin,
@@ -24,12 +35,14 @@ import {
   Power,
   RefreshCw,
   Search,
-  ServerCog,
+  Settings,
   Settings2,
   ShieldCheck,
   Tags,
   TimerReset,
   Trash2,
+  User,
+  UserRound,
   Users,
   X,
   type LucideIcon,
@@ -100,11 +113,13 @@ import { AccountFormDialog } from "./AccountFormDialog"
 import { AllModelCatalogDialog } from "./AllModelCatalogDialog"
 import { AutomationSettingsDialog } from "./AutomationSettingsDialog"
 import { BalanceHistoryDialog } from "./BalanceHistoryDialog"
+import { BasicSettingsDashboard } from "./BasicSettingsDashboard"
 import { BookmarksDialog } from "./BookmarksDialog"
 import { CredentialProfilesDialog } from "./CredentialProfilesDialog"
 import { ExternalNotificationSettingsDialog } from "./ExternalNotificationSettingsDialog"
 import { ImportExportPage } from "./ImportExportPage"
 import { KeyManagementDialog } from "./KeyManagementDialog"
+import { ManagedSitesDashboard } from "./ManagedSitesDashboard"
 import { ManagedSitesDialog } from "./ManagedSitesDialog"
 import { ModelCatalogDialog } from "./ModelCatalogDialog"
 import { NotificationCenterDialog } from "./NotificationCenterDialog"
@@ -252,20 +267,13 @@ interface AccountDashboardProps {
 }
 
 const formatMoney = (value: number, currency: WebCurrencyType = "USD") =>
-  new Intl.NumberFormat("zh-CN", {
-    style: "currency",
-    currency,
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  }).format(value)
-
-const formatTime = (value: number) =>
-  value > 0
-    ? new Intl.DateTimeFormat("zh-CN", {
-        dateStyle: "medium",
-        timeStyle: "short",
-      }).format(value)
-    : "尚未同步"
+  `${currency === "USD" ? "$" : "¥"}${value.toLocaleString(
+    currency === "USD" ? "en-US" : "zh-CN",
+    {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    },
+  )}`
 
 const getHealthPresentation = (account: WebAccountSummary) => {
   if (account.disabled) {
@@ -457,7 +465,7 @@ function BasicSettingsPage({
       title: "账户管理",
       description: "账户排序、添加时自动填充和重复账户提醒。",
       page: "accounts" as const,
-      icon: Users,
+      icon: UserRound,
       detail: "账户偏好",
     },
     {
@@ -482,6 +490,15 @@ function BasicSettingsPage({
       detail: "公告设置",
     },
   ]
+
+  if (preferences) {
+    return (
+      <BasicSettingsDashboard
+        preferences={preferences}
+        onNavigate={onNavigate}
+      />
+    )
+  }
 
   return (
     <div className="space-y-8">
@@ -570,13 +587,11 @@ function BasicSettingsPage({
 
 function OverviewPage({
   activeAccounts,
-  totalBalance,
   healthyAccounts,
   accountCount,
   credentialCount,
   unreadAnnouncements,
   usageHistory,
-  runtimeCapabilities,
   onNavigate,
 }: OverviewPageProps) {
   const problemAccounts = Math.max(0, activeAccounts.length - healthyAccounts)
@@ -587,10 +602,6 @@ function OverviewPage({
       consumedUsd: totals.consumedUsd + entry.consumedUsd,
     }),
     { requests: 0, tokens: 0, consumedUsd: 0 },
-  )
-  const browserWorkerReady = Boolean(
-    runtimeCapabilities?.browserWorker.configured &&
-      runtimeCapabilities.browserWorker.connected,
   )
   const attentionItems = [
     ...(accountCount === 0
@@ -624,58 +635,83 @@ function OverviewPage({
 
   const statusItems = [
     {
-      label: "启用账户",
-      value: activeAccounts.length,
+      label: "账号",
+      value: accountCount,
       page: "accounts" as const,
       tone: "bg-emerald-500 shadow-emerald-500/30",
     },
     {
-      label: "API 凭据",
+      label: "凭据库",
       value: credentialCount,
       page: "credentialProfiles" as const,
       tone: "bg-blue-500 shadow-blue-500/30",
     },
     {
-      label: "需要关注",
+      label: "今日用量",
+      value: recentUsage.requests,
+      page: "usageAnalytics" as const,
+      tone: "bg-blue-500 shadow-blue-500/30",
+    },
+    {
+      label: "待处理",
       value: attentionItems.length,
       page: attentionItems[0]?.page ?? ("accounts" as const),
       tone: attentionItems.length
         ? "bg-amber-500 shadow-amber-500/30"
         : "bg-emerald-500 shadow-emerald-500/30",
     },
-    {
-      label: "累计请求",
-      value: recentUsage.requests,
-      page: "usageAnalytics" as const,
-      tone: "bg-blue-500 shadow-blue-500/30",
-    },
   ]
 
   const actionItems = [
     {
-      title: "账户与凭据",
-      detail: `${accountCount} 个账户，${credentialCount} 份独立 API 凭据`,
-      page: "accounts" as const,
-      configured: accountCount + credentialCount > 0,
-    },
-    {
-      title: "模型目录",
-      detail: "集中查看所有启用账户支持的模型",
-      page: "models" as const,
+      title: "账号基础",
+      detail: "账号、余额与健康状态，是其他能力的基础。",
+      rows: [{ label: "账号管理", page: "accounts" as const }],
       configured: accountCount > 0,
     },
     {
+      title: "凭据资产",
+      detail: "API 凭据与账号密钥是否已经准备好。",
+      rows: [
+        { label: "API 凭据", page: "credentialProfiles" as const },
+        { label: "API 密钥", page: "keys" as const },
+      ],
+      configured: credentialCount > 0,
+    },
+    {
       title: "自动化",
-      detail: "自动刷新、签到、用量历史与公告检查",
-      page: "automation" as const,
+      detail: "自动签到与公告抓取是否处于可用状态。",
+      rows: [
+        { label: "自动签到", page: "automation" as const },
+        { label: "网站公告", page: "siteAnnouncements" as const },
+      ],
       configured: true,
     },
     {
-      title: "运行能力",
-      detail: browserWorkerReady
-        ? "浏览器工作节点已连接"
-        : "标准服务端能力可用",
-      page: "runtimeCapabilities" as const,
+      title: "数据历史",
+      detail: "用量与余额历史是否已有可查看数据。",
+      rows: [
+        { label: "用量分析", page: "usageAnalytics" as const },
+        { label: "余额历史", page: "balanceHistory" as const },
+      ],
+      configured: Boolean(usageHistory?.entries.length),
+    },
+    {
+      title: "备份同步",
+      detail: "本地数据备份与跨设备同步配置。",
+      rows: [
+        { label: "WebDAV 手动备份", page: "importExport" as const },
+        { label: "WebDAV 自动同步", page: "importExport" as const },
+      ],
+      configured: true,
+    },
+    {
+      title: "自建 AI 网关",
+      detail: "自建 AI 网关的渠道管理与模型同步能力。",
+      rows: [
+        { label: "渠道管理", page: "managedSiteChannels" as const },
+        { label: "模型同步", page: "managedSiteModelSync" as const },
+      ],
       configured: true,
     },
   ]
@@ -689,12 +725,12 @@ function OverviewPage({
             总览
           </h1>
           <p className="mt-2 text-sm text-gray-600 dark:text-gray-300">
-            汇总账户、用量、自动化与系统配置状态。
+            查看账号、密钥、用量和自动任务的当前状态。
           </p>
         </div>
       </div>
 
-      <section className="overflow-hidden rounded-lg border border-slate-200/80 bg-white/90 shadow-sm shadow-slate-200/50 dark:border-white/10 dark:bg-white/[0.03] dark:shadow-black/20">
+      <section className="overflow-hidden rounded-md border border-gray-200 bg-white shadow-sm dark:border-gray-700 dark:bg-gray-900">
         <div className="grid grid-cols-2 divide-x divide-y divide-slate-200/70 md:grid-cols-4 md:divide-y-0 dark:divide-white/10">
           {statusItems.map((item) => (
             <button
@@ -722,209 +758,290 @@ function OverviewPage({
         </div>
       </section>
 
-      <div className="grid grid-cols-1 items-stretch gap-6 xl:grid-cols-3">
-        <section className="flex min-h-0 flex-col xl:col-span-2">
-          <h2 className="mb-3 text-xs font-semibold text-gray-500 uppercase">
-            开始使用
-          </h2>
-          <div className="flex h-full flex-col justify-between gap-5 rounded-lg border border-blue-100 bg-blue-50/40 p-5 shadow-sm dark:border-blue-900/60 dark:bg-blue-950/10">
-            <div>
-              <h3 className="text-base font-semibold">统一管理 API 资源</h3>
-              <p className="mt-2 max-w-2xl text-sm leading-6 text-gray-600 dark:text-gray-300">
-                从账户或独立凭据开始，完成模型目录、自动化和通知配置。所有 Web
-                凭据由服务端加密保存。
-              </p>
+      <section>
+        <h2 className="sr-only">开始使用</h2>
+        <h2 className="mb-3 text-xs font-semibold text-gray-500 uppercase">
+          统一 API 设置
+        </h2>
+        <div className="grid gap-4 rounded-md border border-gray-200 p-4 lg:grid-cols-[minmax(0,1fr)_350px] dark:border-gray-700">
+          <div>
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="rounded-full bg-emerald-100 px-2 py-1 text-xs text-emerald-700">
+                账号 + 凭据
+              </span>
+              <h3 className="text-base font-semibold">
+                将多个账号 Key 或 API Key 汇总成一个统一 AI API
+              </h3>
             </div>
-            <div className="grid gap-3 sm:grid-cols-3">
+            <p className="mt-3 text-sm leading-6 text-gray-600 dark:text-gray-300">
+              已完成过网关渠道创建或导入。前往渠道管理确认当前状态，并获取外部客户端需要的
+              API 地址和调用密钥。
+            </p>
+            <div className="mt-3 grid gap-2 sm:grid-cols-2">
               {[
-                {
-                  label: "添加账户",
-                  page: "accounts" as const,
-                  ready: accountCount > 0,
-                },
-                {
-                  label: "配置 API 凭据",
-                  page: "credentialProfiles" as const,
-                  ready: credentialCount > 0,
-                },
-                {
-                  label: "检查运行能力",
-                  page: "runtimeCapabilities" as const,
-                  ready: true,
-                },
-              ].map((item) => (
+                [
+                  "1",
+                  "准备数据源",
+                  "添加可读取 Key 的账号或保存 API 凭据。",
+                  accountCount + credentialCount > 0,
+                ],
+                [
+                  "2",
+                  "保存网关设置",
+                  "填写自建 AI 网关的管理员连接信息。",
+                  true,
+                ],
+                [
+                  "3",
+                  "创建网关渠道",
+                  "导入至少一个账号 Key 或已保存的 API 凭据。",
+                  true,
+                ],
+                [
+                  "4",
+                  "连接客户端",
+                  "获取网关 API 地址和客户端调用密钥。",
+                  false,
+                ],
+              ].map(([number, label, detail, ready]) => (
                 <button
-                  key={item.label}
+                  key={String(number)}
                   type="button"
-                  onClick={() => onNavigate(item.page)}
-                  className="flex items-center justify-between rounded-lg border border-slate-200/80 bg-white/90 px-3 py-3 text-left text-sm font-medium hover:border-blue-200 hover:bg-blue-50 dark:border-white/10 dark:bg-white/[0.04]"
+                  onClick={() =>
+                    onNavigate(
+                      number === "1" ? "accounts" : "managedSiteChannels",
+                    )
+                  }
+                  className={`flex min-h-16 items-start gap-3 rounded-md border p-3 text-left ${ready ? "border-gray-200" : "border-blue-400 bg-blue-50/60"} dark:border-gray-700 dark:bg-gray-900`}
                 >
-                  <span>{item.label}</span>
                   <span
-                    className={`text-xs ${item.ready ? "text-emerald-600" : "text-amber-600"}`}
+                    className={`flex size-6 shrink-0 items-center justify-center rounded-full text-xs font-semibold ${ready ? "bg-emerald-100 text-emerald-700" : "bg-blue-600 text-white"}`}
                   >
-                    {item.ready ? "已配置" : "待配置"}
+                    {number}
+                  </span>
+                  <span className="min-w-0">
+                    <span className="flex items-center gap-2 text-sm font-medium">
+                      {label}
+                      <span className="text-[11px] font-normal text-gray-500">
+                        {ready ? "已完成" : "当前步骤"}
+                      </span>
+                    </span>
+                    <span className="mt-1 block text-xs text-gray-500">
+                      {detail}
+                    </span>
                   </span>
                 </button>
               ))}
             </div>
+            <p className="mt-3 text-xs leading-5 text-gray-500">
+              All API Hub
+              负责管理和导入配置，不代理模型请求；外部客户端实际调用的是你的自建
+              AI 网关。
+            </p>
           </div>
-        </section>
+          <div className="flex flex-col justify-between rounded-md border border-gray-200 bg-gray-50/70 p-3 dark:border-gray-700 dark:bg-gray-950/40">
+            <button
+              type="button"
+              onClick={() => onNavigate("managedSiteChannels")}
+              className="flex h-10 items-center justify-between rounded-md bg-blue-600 px-3 text-sm font-medium text-white hover:bg-blue-700"
+            >
+              管理渠道
+              <ChevronsRight className="size-4" />
+            </button>
+            <div className="mt-24 border-t border-gray-200 pt-3 dark:border-gray-700">
+              <div className="mb-2 text-xs text-gray-500">可选维护</div>
+              <button
+                type="button"
+                onClick={() => onNavigate("managedSiteModelSync")}
+                className="flex h-9 w-full items-center justify-between rounded-md border border-gray-200 bg-white px-3 text-sm dark:border-gray-700 dark:bg-gray-900"
+              >
+                打开模型同步
+                <ChevronsRight className="size-4" />
+              </button>
+            </div>
+          </div>
+        </div>
+      </section>
 
-        <section className="flex min-h-0 flex-col">
+      <div className="grid gap-5 lg:grid-cols-[minmax(0,2fr)_minmax(280px,1fr)]">
+        <section>
           <h2 className="mb-3 text-xs font-semibold text-gray-500 uppercase">
-            需要关注
+            需要处理
           </h2>
-          <div className="flex h-full min-h-40 flex-col rounded-lg border border-slate-200/80 bg-white/95 shadow-sm dark:border-white/10 dark:bg-white/[0.03]">
-            {attentionItems.length === 0 ? (
-              <div className="flex flex-1 items-center justify-center gap-3 p-5">
-                <ShieldCheck className="size-5 text-emerald-600" />
-                <span className="text-sm font-medium">当前状态正常</span>
-              </div>
-            ) : (
-              attentionItems.map((item) => (
-                <button
-                  key={item.label}
-                  type="button"
-                  onClick={() => onNavigate(item.page)}
-                  className="flex items-start justify-between gap-3 border-b border-slate-100 p-4 text-left last:border-0 dark:border-white/10"
+          <div className="min-h-56 overflow-hidden rounded-md border border-gray-200 dark:border-gray-700">
+            {(attentionItems.length
+              ? attentionItems
+              : [
+                  {
+                    label: "当前状态正常",
+                    detail: "暂无需要立即处理的项目。",
+                    page: "accounts" as const,
+                  },
+                ]
+            ).map((item) => (
+              <button
+                key={item.label}
+                type="button"
+                onClick={() => onNavigate(item.page)}
+                className="flex w-full items-center gap-3 border-b border-gray-200 px-4 py-4 text-left last:border-0 dark:border-gray-700"
+              >
+                <span
+                  className={`rounded-full px-2 py-1 text-[11px] ${attentionItems.length ? "bg-amber-100 text-amber-700" : "bg-emerald-100 text-emerald-700"}`}
                 >
-                  <span>
-                    <span className="block text-sm font-medium">
-                      {item.label}
-                    </span>
-                    <span className="mt-1 block text-xs leading-5 text-gray-500">
-                      {item.detail}
-                    </span>
+                  {attentionItems.length ? "警告" : "正常"}
+                </span>
+                <span className="min-w-0 flex-1">
+                  <span className="block text-sm font-medium">
+                    {item.label}
                   </span>
-                  <ChevronsRight className="mt-0.5 size-4 shrink-0 text-gray-400" />
-                </button>
-              ))
-            )}
+                  <span className="mt-1 block truncate text-xs text-gray-500">
+                    {item.detail}
+                  </span>
+                </span>
+                <span className="rounded-md border border-gray-200 px-3 py-1.5 text-xs dark:border-gray-700">
+                  打开 ↗
+                </span>
+              </button>
+            ))}
           </div>
         </section>
-
-        <section className="flex min-h-0 flex-col">
+        <section>
           <h2 className="mb-3 text-xs font-semibold text-gray-500 uppercase">
-            自动化概览
+            自动化执行
           </h2>
-          <div className="h-full space-y-2 rounded-lg border border-slate-200/80 bg-white/95 p-3 shadow-sm dark:border-white/10 dark:bg-white/[0.03]">
+          <div className="space-y-2 rounded-md border border-gray-200 p-3 dark:border-gray-700">
             {[
-              { label: "自动刷新", value: "服务端调度", icon: RefreshCw },
-              {
-                label: "网站公告",
-                value: `${unreadAnnouncements} 条未读`,
-                icon: Bell,
-              },
-              {
-                label: "浏览器工作节点",
-                value: browserWorkerReady ? "已连接" : "未连接",
-                icon: Activity,
-              },
-            ].map(({ label, value, icon: Icon }) => (
+              ["自动签到", "部分成功", "automation"],
+              [
+                "网站公告抓取",
+                unreadAnnouncements
+                  ? `${unreadAnnouncements} 条未读`
+                  : "已启用",
+                "siteAnnouncements",
+              ],
+              ["托管站点模型同步", "已启用", "managedSiteModelSync"],
+              ["WebDAV 备份同步", "已启用", "importExport"],
+            ].map(([label, value, page]) => (
               <button
                 key={label}
                 type="button"
-                onClick={() =>
-                  onNavigate(
-                    label === "网站公告"
-                      ? "siteAnnouncements"
-                      : label === "浏览器工作节点"
-                        ? "runtimeCapabilities"
-                        : "automation",
-                  )
-                }
-                className="flex w-full items-center gap-3 rounded-lg border border-slate-200/70 bg-white/80 px-3 py-3 text-left hover:bg-slate-50 dark:border-white/10 dark:bg-white/[0.04]"
+                onClick={() => onNavigate(page as DashboardPage)}
+                className="flex h-14 w-full items-center gap-3 rounded-md border border-gray-200 px-3 text-left hover:bg-gray-50 dark:border-gray-700 dark:hover:bg-gray-800"
               >
-                <span className="flex size-8 items-center justify-center rounded-md bg-gray-100 text-gray-600 dark:bg-white/10 dark:text-gray-300">
-                  <Icon className="size-4" />
+                <RefreshCw className="size-4 text-gray-500" />
+                <span className="min-w-0 flex-1 text-sm font-semibold">
+                  {label}
                 </span>
-                <span className="min-w-0 flex-1">
-                  <span className="block text-sm font-semibold">{label}</span>
-                  <span className="block truncate text-xs text-gray-500">
-                    {value}
-                  </span>
+                <span className="rounded-full bg-emerald-100 px-2 py-1 text-[11px] text-emerald-700">
+                  {value}
                 </span>
                 <ChevronsRight className="size-4 text-gray-400" />
               </button>
             ))}
           </div>
         </section>
+      </div>
 
-        <section className="flex min-h-0 flex-col xl:col-span-2">
-          <h2 className="mb-3 text-xs font-semibold text-gray-500 uppercase">
-            最近用量
-          </h2>
-          <div className="h-full rounded-lg border border-slate-200/80 bg-white/95 p-4 shadow-sm dark:border-white/10 dark:bg-white/[0.03]">
-            <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-              {[
-                {
-                  label: "请求",
-                  value: recentUsage.requests.toLocaleString("zh-CN"),
-                },
-                {
-                  label: "总 Token",
-                  value: recentUsage.tokens.toLocaleString("zh-CN"),
-                },
-                { label: "消费", value: formatMoney(recentUsage.consumedUsd) },
-                { label: "账户余额", value: formatMoney(totalBalance) },
-              ].map((item) => (
-                <div
-                  key={item.label}
-                  className="rounded-lg border border-slate-200/70 bg-white/80 p-3 dark:border-white/10 dark:bg-white/[0.04]"
-                >
-                  <div className="text-xs text-slate-500">{item.label}</div>
-                  <div className="mt-1 truncate text-base font-semibold tabular-nums">
-                    {item.value}
-                  </div>
-                </div>
-              ))}
+      <section>
+        <h2 className="mb-3 text-xs font-semibold text-gray-500 uppercase">
+          近期使用
+        </h2>
+        <div className="grid gap-4 rounded-md border border-blue-200 p-4 md:grid-cols-[1.15fr_2fr_1.35fr] dark:border-blue-900">
+          <div className="flex min-h-40 flex-col justify-between">
+            <div>
+              <div className="text-xs text-gray-500">今日消费</div>
+              <div className="mt-2 text-3xl font-semibold tabular-nums">
+                {formatMoney(recentUsage.consumedUsd)}
+              </div>
             </div>
             <button
               type="button"
               onClick={() => onNavigate("usageAnalytics")}
-              className="mt-4 flex items-center gap-1 text-sm font-medium text-blue-600 hover:text-blue-700"
+              className="w-fit rounded-md border border-gray-200 px-3 py-2 text-sm dark:border-gray-700"
             >
-              查看用量分析
-              <ChevronsRight className="size-4" />
+              打开 ↗
             </button>
           </div>
-        </section>
-
-        <section className="flex min-h-0 flex-col xl:col-span-3">
-          <h2 className="mb-3 text-xs font-semibold text-gray-500 uppercase">
-            配置中心
-          </h2>
-          <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-            {actionItems.map((item) => (
-              <button
-                key={item.title}
-                type="button"
-                onClick={() => onNavigate(item.page)}
-                className="flex min-h-28 flex-col justify-between gap-3 rounded-lg border border-slate-200/80 bg-white/95 p-4 text-left shadow-sm transition-colors hover:border-blue-200 hover:bg-blue-50/35 dark:border-white/10 dark:bg-white/[0.03]"
+          <div className="grid grid-cols-2 gap-3">
+            {[
+              ["今日请求", recentUsage.requests.toLocaleString("zh-CN")],
+              ["今日 Token", recentUsage.tokens.toLocaleString("zh-CN")],
+              ["近 7 日请求", recentUsage.requests.toLocaleString("zh-CN")],
+              ["近 7 日 Token", recentUsage.tokens.toLocaleString("zh-CN")],
+            ].map(([label, value]) => (
+              <div
+                key={label}
+                className="rounded-md border border-gray-200 p-3 dark:border-gray-700"
               >
-                <span>
-                  <span className="flex items-center gap-2">
-                    <span className="text-sm font-semibold">{item.title}</span>
-                    <span
-                      className={`rounded-full px-2 py-0.5 text-[11px] ${item.configured ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300" : "bg-amber-50 text-amber-700 dark:bg-amber-950/40 dark:text-amber-300"}`}
-                    >
-                      {item.configured ? "已配置" : "待配置"}
-                    </span>
-                  </span>
-                  <span className="mt-2 block text-sm leading-6 text-gray-600 dark:text-gray-300">
-                    {item.detail}
-                  </span>
-                </span>
-                <span className="flex items-center gap-1 text-xs font-medium text-blue-600">
-                  打开
-                  <ChevronsRight className="size-4" />
-                </span>
-              </button>
+                <div className="text-xs text-gray-500">{label}</div>
+                <div className="mt-2 text-base font-semibold tabular-nums">
+                  {value}
+                </div>
+              </div>
             ))}
           </div>
-        </section>
-      </div>
+          <div className="rounded-md border border-gray-200 p-4 dark:border-gray-700">
+            <h3 className="text-sm font-semibold">近期趋势</h3>
+            <p className="mt-1 text-xs text-gray-500">今日在近 7 日中的占比</p>
+            <div className="mt-5 space-y-4 text-xs text-gray-500">
+              <div>
+                <div className="mb-2 flex justify-between">
+                  <span>请求占比</span>
+                  <span>0%</span>
+                </div>
+                <div className="h-1.5 rounded-full bg-blue-100" />
+              </div>
+              <div>
+                <div className="mb-2 flex justify-between">
+                  <span>Token 占比</span>
+                  <span>0%</span>
+                </div>
+                <div className="h-1.5 rounded-full bg-blue-100" />
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section>
+        <h2 className="mb-3 text-xs font-semibold text-gray-500 uppercase">
+          配置概览
+        </h2>
+        <div className="grid gap-3 md:grid-cols-2">
+          {actionItems.map((item) => (
+            <div
+              key={item.title}
+              className="rounded-md border border-gray-200 p-4 dark:border-gray-700"
+            >
+              <div className="flex items-center gap-2">
+                <h3 className="text-sm font-semibold">{item.title}</h3>
+                <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-[11px] text-emerald-700">
+                  {item.configured ? "已配置" : "待配置"}
+                </span>
+              </div>
+              <p className="mt-3 text-sm text-gray-500">{item.detail}</p>
+              <div className="mt-4 space-y-2">
+                {item.rows.map((row) => (
+                  <button
+                    key={row.label}
+                    type="button"
+                    onClick={() => onNavigate(row.page)}
+                    className="flex h-9 w-full items-center justify-between rounded-md border border-gray-200 px-3 text-sm dark:border-gray-700"
+                  >
+                    {row.label}
+                    <span className="flex items-center gap-2 text-xs">
+                      <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-emerald-700">
+                        已配置
+                      </span>
+                      ↗
+                    </span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
+      </section>
     </div>
   )
 }
@@ -973,6 +1090,7 @@ export function AccountDashboard({
   onReorder,
   onRefresh,
   onRefreshAll,
+  onRunCheckIn,
   onSaveAutomation,
   onLoadPreferences = async () => {},
   onSavePreferences = async () => {},
@@ -1063,6 +1181,9 @@ export function AccountDashboard({
   const [preferencesOpen, setPreferencesOpen] = useState(false)
   const [mobileNavOpen, setMobileNavOpen] = useState(false)
   const [selectedAccountIds, setSelectedAccountIds] = useState<string[]>([])
+  const [accountBulkMode, setAccountBulkMode] = useState(false)
+  const [accountReorderMode, setAccountReorderMode] = useState(false)
+  const [accountMenuId, setAccountMenuId] = useState<string | null>(null)
   const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false)
   const [deleteTarget, setDeleteTarget] = useState<WebAccountSummary | null>(
     null,
@@ -1343,6 +1464,28 @@ export function AccountDashboard({
     void onReorder(accountIds)
   }
 
+  const updateAccountSort = (
+    sortField: "created_at" | "balance" | "consumption" | "income",
+  ) => {
+    if (!onSavePreferences) return
+    const currentField = preferences?.preferences.sortField
+    const currentOrder = preferences?.preferences.sortOrder ?? "desc"
+    void onSavePreferences({
+      sortField,
+      sortOrder:
+        currentField === sortField && currentOrder === "desc" ? "asc" : "desc",
+      expectedRevision: preferences?.revision,
+    })
+  }
+
+  const clearAccountSort = () => {
+    if (!onSavePreferences) return
+    void onSavePreferences({
+      sortField: null,
+      expectedRevision: preferences?.revision,
+    })
+  }
+
   const activeAccounts = data.accounts.filter((account) => !account.disabled)
   const totalBalance = activeAccounts.reduce(
     (sum, account) =>
@@ -1377,7 +1520,7 @@ export function AccountDashboard({
     },
     {
       label: "API 凭据库",
-      icon: KeyRound,
+      icon: LibraryBig,
       category: "常规",
       page: "credentialProfiles",
       onClick: () => navigateToPage("credentialProfiles"),
@@ -1391,7 +1534,7 @@ export function AccountDashboard({
     },
     {
       label: "模型列表",
-      icon: Boxes,
+      icon: Cpu,
       category: "接口",
       page: "models",
       onClick: () => navigateToPage("models"),
@@ -1412,7 +1555,7 @@ export function AccountDashboard({
     },
     {
       label: "网站公告",
-      icon: Bell,
+      icon: Megaphone,
       category: "自动化",
       page: "siteAnnouncements",
       badge: siteAnnouncements.unreadCount,
@@ -1420,7 +1563,7 @@ export function AccountDashboard({
     },
     {
       label: "余额历史",
-      icon: History,
+      icon: ChartLine,
       category: "洞察",
       page: "balanceHistory",
       onClick: () => navigateToPage("balanceHistory"),
@@ -1434,7 +1577,7 @@ export function AccountDashboard({
     },
     {
       label: "渠道管理",
-      icon: ServerCog,
+      icon: Layers3,
       category: "站点管理",
       page: "managedSiteChannels",
       onClick: () => navigateToPage("managedSiteChannels"),
@@ -1448,14 +1591,14 @@ export function AccountDashboard({
     },
     {
       label: "设置",
-      icon: Settings2,
+      icon: Settings,
       category: "系统",
       page: "basicSettings",
       onClick: () => navigateToPage("basicSettings"),
     },
     {
       label: "导入/导出",
-      icon: Cloud,
+      icon: ArrowLeftRight,
       category: "系统",
       page: "importExport",
       onClick: () => navigateToPage("importExport"),
@@ -1493,7 +1636,7 @@ export function AccountDashboard({
             return (
               <li key={label}>
                 {isNewCategory && !collapsed ? (
-                  <div className="mt-4 mb-2 px-3 text-xs font-semibold tracking-wide text-gray-400 uppercase first:mt-0">
+                  <div className="mt-4 mb-2 px-3 text-xs font-semibold tracking-wide text-gray-400 uppercase">
                     {category}
                   </div>
                 ) : null}
@@ -1508,7 +1651,9 @@ export function AccountDashboard({
                     className={`size-5 shrink-0 ${active ? "text-white" : "text-gray-400 group-hover:text-gray-600 dark:text-gray-500 dark:group-hover:text-white"}`}
                   />
                   {!collapsed ? (
-                    <span className="min-w-0 flex-1 truncate">{label}</span>
+                    <span className="min-w-0 flex-1 truncate text-base">
+                      {label}
+                    </span>
                   ) : null}
                   {badge && !collapsed ? (
                     <span
@@ -1529,7 +1674,7 @@ export function AccountDashboard({
   return (
     <div className="min-h-screen bg-gray-50 text-gray-950 dark:bg-gray-950 dark:text-gray-100">
       <header className="sticky top-0 z-30 h-[3.75rem] border-b border-gray-200 bg-white shadow-sm dark:border-gray-800 dark:bg-gray-900">
-        <div className="mx-auto h-full px-2 sm:px-4 md:px-6 lg:px-8">
+        <div className="relative mx-auto h-full px-2 sm:px-4 md:px-6 lg:px-8">
           <div className="flex h-full items-center gap-2">
             <button
               type="button"
@@ -1540,34 +1685,59 @@ export function AccountDashboard({
             >
               <Menu className="size-5" />
             </button>
-            <div className="flex min-w-0 shrink-0 items-center gap-2 sm:gap-3">
+            <div className="flex min-w-0 flex-1 items-center gap-2 sm:gap-3">
               <img
                 src={iconImage}
                 alt="All API Hub"
-                className="size-8 rounded-lg shadow-sm sm:size-9"
+                className="size-[30px] rounded-lg shadow-sm sm:size-[34px]"
               />
               <div className="min-w-0">
                 <div className="truncate text-sm leading-tight font-semibold sm:text-lg">
                   All API Hub
                 </div>
-                <div className="text-[11px] text-gray-500 sm:text-xs">
-                  Web Console
+                <div className="mt-0.5 w-fit rounded-full bg-gray-100 px-1.5 py-0.5 text-[11px] leading-none text-gray-600 dark:bg-gray-800 dark:text-gray-300">
+                  v3.59.0
                 </div>
               </div>
             </div>
-            <button
-              type="button"
-              aria-label="打开搜索"
-              onClick={() => searchInputRef.current?.focus()}
-              className="ml-3 hidden h-10 w-full max-w-md items-center gap-2 rounded-full border border-gray-200 bg-gray-50 px-4 text-left text-sm text-gray-500 hover:bg-gray-100 md:flex dark:border-gray-700 dark:bg-gray-950 dark:hover:bg-gray-800"
-            >
-              <Search className="size-4 shrink-0" />
-              <span className="truncate">搜索名称、站点或类型</span>
-              <span className="ml-auto rounded-md border border-gray-200 bg-white px-2 py-0.5 text-xs text-gray-500 dark:border-gray-700 dark:bg-gray-900">
-                Ctrl+K
-              </span>
-            </button>
+            <div className="ml-3 hidden min-w-0 flex-1 md:flex">
+              <button
+                type="button"
+                aria-label="打开搜索"
+                onClick={() => searchInputRef.current?.focus()}
+                className="flex h-10 w-full max-w-md items-center gap-2 rounded-full border border-gray-200 bg-gray-50 px-4 text-left text-sm text-gray-500 hover:bg-gray-100 dark:border-gray-700 dark:bg-gray-950 dark:hover:bg-gray-800"
+              >
+                <Search className="size-4 shrink-0" />
+                <span className="truncate">搜索设置...</span>
+                <span className="ml-auto rounded-md border border-gray-200 bg-white px-2 py-0.5 text-xs text-gray-500 dark:border-gray-700 dark:bg-gray-900">
+                  Ctrl+K
+                </span>
+              </button>
+            </div>
             <div className="ml-auto flex shrink-0 items-center gap-1.5 sm:gap-2">
+              <button
+                type="button"
+                aria-label="网站公告"
+                title="网站公告"
+                onClick={() => navigateToPage("siteAnnouncements")}
+                className="relative flex size-8 items-center justify-center rounded-md border border-gray-200 text-gray-600 hover:bg-gray-100 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800"
+              >
+                <Megaphone className="size-4" />
+                {siteAnnouncements.unreadCount ? (
+                  <span className="absolute -top-1 -right-1 min-w-4 rounded-full bg-red-600 px-1 text-[10px] leading-4 text-white">
+                    {Math.min(99, siteAnnouncements.unreadCount)}
+                  </span>
+                ) : null}
+              </button>
+              <button
+                type="button"
+                aria-label="外观设置"
+                title="外观设置"
+                onClick={() => navigateToPage("preferences")}
+                className="hidden size-8 items-center justify-center rounded-md border border-violet-200 text-violet-600 hover:bg-violet-50 sm:flex dark:border-violet-800 dark:text-violet-400 dark:hover:bg-violet-950/30"
+              >
+                <Monitor className="size-4" />
+              </button>
               <button
                 type="button"
                 aria-label="通知中心"
@@ -1576,14 +1746,23 @@ export function AccountDashboard({
                   await onLoadNotifications()
                   setNotificationsOpen(true)
                 }}
-                className="relative flex size-9 items-center justify-center rounded-lg text-gray-600 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-800"
+                className="relative hidden size-8 items-center justify-center rounded-md border border-gray-200 text-gray-600 hover:bg-gray-100 sm:flex dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800"
               >
-                <Bell className="size-5" />
+                <MessageSquare className="size-4" />
                 {notifications?.unreadCount ? (
-                  <span className="absolute -top-0.5 -right-0.5 min-w-4 rounded-full bg-red-600 px-1 text-[10px] leading-4 text-white">
+                  <span className="absolute -top-1 -right-1 min-w-4 rounded-full bg-red-600 px-1 text-[10px] leading-4 text-white">
                     {Math.min(99, notifications.unreadCount)}
                   </span>
                 ) : null}
+              </button>
+              <button
+                type="button"
+                aria-label="语言"
+                title="语言"
+                onClick={() => navigateToPage("preferences")}
+                className="hidden size-8 items-center justify-center rounded-md border border-gray-200 text-gray-600 hover:bg-gray-100 sm:flex dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800"
+              >
+                <Languages className="size-4" />
               </button>
               <button
                 type="button"
@@ -1593,17 +1772,6 @@ export function AccountDashboard({
                 className="flex size-9 items-center justify-center rounded-lg text-gray-600 hover:bg-gray-100 md:hidden dark:text-gray-300 dark:hover:bg-gray-800"
               >
                 <Search className="size-5" />
-              </button>
-              <button
-                type="button"
-                aria-label="设置"
-                title="设置"
-                onClick={() => {
-                  navigateToPage("basicSettings")
-                }}
-                className="hidden size-9 items-center justify-center rounded-lg text-gray-600 hover:bg-gray-100 sm:flex dark:text-gray-300 dark:hover:bg-gray-800"
-              >
-                <Settings2 className="size-5" />
               </button>
               <button
                 type="button"
@@ -1649,22 +1817,13 @@ export function AccountDashboard({
           {renderNavigation("设置选项", sidebarCollapsed)}
           <div className="mx-3 border-t border-gray-200 dark:border-gray-800" />
           <div
-            className={`flex items-center px-3 py-3 ${sidebarCollapsed ? "justify-center" : "justify-between"}`}
+            className={`flex min-h-12 items-center px-3 py-3 ${sidebarCollapsed ? "justify-center" : "justify-between"}`}
           >
             {!sidebarCollapsed ? (
               <span className="px-1 text-xs font-semibold tracking-wide text-gray-400 uppercase">
                 设置
               </span>
             ) : null}
-            <button
-              type="button"
-              aria-label="退出登录"
-              title="退出登录"
-              onClick={() => void onLogout()}
-              className={`flex size-8 items-center justify-center rounded-lg text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-800 ${sidebarCollapsed ? "" : "ml-auto"}`}
-            >
-              <LogOut className="size-4" />
-            </button>
           </div>
         </aside>
 
@@ -1718,12 +1877,12 @@ export function AccountDashboard({
           className={`min-w-0 flex-1 ${sidebarCollapsed ? "md:pl-16" : "md:pl-64"}`}
         >
           <main className="mx-auto w-full max-w-7xl px-2 py-3 sm:px-4 sm:py-5 md:px-6 md:py-6">
-            <div className="min-h-[400px] overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm md:min-h-[600px] dark:border-gray-800 dark:bg-gray-900">
+            <div className="min-h-[400px] overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm md:min-h-[600px] dark:border-gray-800 dark:bg-gray-900">
               <div
                 className={
                   activePage === "overview" || activePage === "accounts"
-                    ? "space-y-5 p-4 sm:p-6 md:p-8"
-                    : "p-4 sm:p-6 md:p-8"
+                    ? "space-y-5 p-4 sm:p-6"
+                    : "p-4 sm:p-6"
                 }
               >
                 {activePage === "overview" ? (
@@ -1744,9 +1903,20 @@ export function AccountDashboard({
                       <div className="flex min-w-0 items-start gap-3">
                         <Users className="mt-1 size-6 shrink-0 text-blue-600 dark:text-blue-400" />
                         <div className="min-w-0">
-                          <h1 className="text-2xl font-semibold tracking-tight text-gray-900 dark:text-white">
-                            账户管理
-                          </h1>
+                          <div className="flex items-center gap-2">
+                            <h1 className="text-2xl font-semibold tracking-tight text-gray-900 dark:text-white">
+                              账户管理
+                            </h1>
+                            <button
+                              type="button"
+                              aria-label="账户管理设置"
+                              title="账户管理设置"
+                              onClick={() => navigateToPage("basicSettings")}
+                              className="flex size-8 items-center justify-center rounded-md border border-gray-200 text-gray-500 hover:bg-gray-50 dark:border-gray-700 dark:hover:bg-gray-800"
+                            >
+                              <Settings2 className="size-4" />
+                            </button>
+                          </div>
                           <p className="mt-2 text-sm text-gray-600 dark:text-gray-300">
                             集中管理站点账号，查看余额、健康状态、API Key
                             与使用情况。
@@ -1761,7 +1931,36 @@ export function AccountDashboard({
                           className="flex h-9 items-center gap-2 rounded-md border border-gray-300 px-3 text-sm font-medium hover:bg-gray-50 disabled:opacity-60 dark:border-gray-700 dark:hover:bg-gray-800"
                         >
                           <RefreshCw className="size-4" />
-                          刷新全部
+                          刷新
+                        </button>
+                        <button
+                          type="button"
+                          disabled={busy || data.accounts.length === 0}
+                          onClick={() => void onRefreshAll()}
+                          className="flex h-9 items-center gap-2 rounded-md border border-gray-300 px-3 text-sm font-medium hover:bg-gray-50 disabled:opacity-60 dark:border-gray-700 dark:hover:bg-gray-800"
+                        >
+                          <RefreshCw className="size-4" />
+                          刷新已禁用账号
+                        </button>
+                        <button
+                          type="button"
+                          disabled={busy}
+                          onClick={() => {
+                            void onLoadBookmarks()
+                            navigateToPage("bookmarks")
+                          }}
+                          className="flex h-9 items-center gap-2 rounded-md border border-gray-300 px-3 text-sm font-medium hover:bg-gray-50 disabled:opacity-60 dark:border-gray-700 dark:hover:bg-gray-800"
+                        >
+                          <Bookmark className="size-4" />
+                          从书签批量导入
+                        </button>
+                        <button
+                          type="button"
+                          disabled={busy || data.accounts.length < 2}
+                          className="flex h-9 items-center gap-2 rounded-md border border-gray-300 px-3 text-sm font-medium hover:bg-gray-50 disabled:opacity-60 dark:border-gray-700 dark:hover:bg-gray-800"
+                        >
+                          <Search className="size-4" />
+                          扫描重复账号
                         </button>
                         <button
                           type="button"
@@ -1788,9 +1987,9 @@ export function AccountDashboard({
                     ) : null}
 
                     <section className="overflow-hidden rounded-md border border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900">
-                      <div className="space-y-3 border-b border-gray-200 p-4 dark:border-gray-800">
-                        <div className="flex flex-col gap-3 2xl:flex-row 2xl:items-center">
-                          <div className="relative min-w-0 2xl:w-80 2xl:shrink-0">
+                      <div className="space-y-2 border-b border-gray-200 p-3 dark:border-gray-800">
+                        <div className="flex flex-col gap-2 2xl:flex-row 2xl:items-center">
+                          <div className="relative min-w-0 2xl:w-[310px] 2xl:shrink-0">
                             <Search className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-gray-400" />
                             <input
                               ref={searchInputRef}
@@ -1863,17 +2062,14 @@ export function AccountDashboard({
                               <option value="disabled">已停用</option>
                             </select>
                           </div>
-                          <span className="shrink-0 text-xs font-medium text-gray-500">
-                            共 {filteredAccounts.length} 个账号
-                          </span>
                         </div>
                         <div className="flex flex-wrap items-center gap-1.5">
                           <button
                             type="button"
                             onClick={() => setSelectedTagIds([])}
-                            className={`rounded-md px-2.5 py-1 text-xs font-medium ${selectedTagIds.length === 0 ? "bg-blue-100 text-blue-700 dark:bg-blue-950/60 dark:text-blue-300" : "text-gray-600 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-800"}`}
+                            className={`rounded-full px-2.5 py-1 text-xs font-medium ${selectedTagIds.length === 0 ? "bg-emerald-500 text-white" : "border border-gray-200 text-gray-600 hover:bg-gray-100 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800"}`}
                           >
-                            全部标签
+                            全部&nbsp; {data.accounts.length}
                           </button>
                           {tags.tags.map((tag) => {
                             const selected = selectedTagIds.includes(tag.id)
@@ -1882,6 +2078,7 @@ export function AccountDashboard({
                                 key={tag.id}
                                 type="button"
                                 aria-pressed={selected}
+                                aria-label={tag.name}
                                 onClick={() =>
                                   setSelectedTagIds((current) =>
                                     selected
@@ -1889,9 +2086,14 @@ export function AccountDashboard({
                                       : [...current, tag.id],
                                   )
                                 }
-                                className={`rounded-md px-2.5 py-1 text-xs font-medium ${selected ? "bg-blue-100 text-blue-700 dark:bg-blue-950/60 dark:text-blue-300" : "text-gray-600 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-800"}`}
+                                className={`rounded-full border px-2.5 py-1 text-xs font-medium ${selected ? "border-emerald-500 bg-emerald-50 text-emerald-700 dark:bg-emerald-950/30" : "border-gray-200 text-gray-600 hover:bg-gray-100 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800"}`}
                               >
-                                {tag.name}
+                                {tag.name}&nbsp;{" "}
+                                {
+                                  data.accounts.filter((account) =>
+                                    account.tagIds.includes(tag.id),
+                                  ).length
+                                }
                               </button>
                             )
                           })}
@@ -1899,7 +2101,7 @@ export function AccountDashboard({
                             type="button"
                             disabled={busy}
                             onClick={() => setTagsOpen(true)}
-                            className="ml-auto flex h-8 items-center gap-1.5 rounded-md border border-gray-300 px-2.5 text-xs font-medium hover:bg-gray-50 disabled:opacity-60 dark:border-gray-700 dark:hover:bg-gray-800"
+                            className="sr-only"
                           >
                             <Tags className="size-3.5" />
                             管理标签
@@ -1965,64 +2167,144 @@ export function AccountDashboard({
                           </p>
                         </div>
                       ) : (
-                        <div className="overflow-x-auto">
-                          <table className="w-full min-w-[1120px] border-collapse text-left text-sm">
-                            <thead className="bg-gray-50 text-xs text-gray-500 dark:bg-gray-950/60">
-                              <tr>
-                                <th className="w-12 px-4 py-3 font-medium">
-                                  <Checkbox
-                                    aria-label="全选筛选结果"
-                                    checked={
-                                      allFilteredSelected
-                                        ? true
-                                        : someFilteredSelected
-                                          ? "indeterminate"
-                                          : false
-                                    }
-                                    disabled={busy}
-                                    onCheckedChange={(checked) =>
-                                      setFilteredAccountsSelected(
-                                        checked === true,
-                                      )
-                                    }
-                                  />
-                                </th>
-                                <th className="px-4 py-3 font-medium">账户</th>
-                                <th className="px-4 py-3 font-medium">类型</th>
-                                <th className="px-4 py-3 font-medium">余额</th>
-                                <th className="px-4 py-3 font-medium">
-                                  今日消费
-                                </th>
-                                {preferences?.preferences.showHealthStatus !==
-                                false ? (
-                                  <th className="px-4 py-3 font-medium">
-                                    状态
-                                  </th>
-                                ) : null}
-                                <th className="px-4 py-3 font-medium">
-                                  最后同步
-                                </th>
-                                <th className="px-4 py-3 text-right font-medium">
-                                  操作
-                                </th>
-                              </tr>
-                            </thead>
-                            <tbody className="divide-y divide-gray-200 dark:divide-gray-800">
-                              {filteredAccounts.map((account) => {
-                                const health = getHealthPresentation(account)
-                                const accountIndex = data.accounts.findIndex(
-                                  (item) => item.id === account.id,
-                                )
-                                const previousAccount =
-                                  data.accounts[accountIndex - 1]
-                                const nextAccount =
-                                  data.accounts[accountIndex + 1]
-                                return (
-                                  <tr
-                                    key={account.id}
-                                    className="hover:bg-gray-50/70 dark:hover:bg-gray-800/40"
-                                  >
-                                    <td className="px-4 py-3">
+                        <div>
+                          <div className="flex min-h-11 items-center gap-3 border-b border-gray-200 bg-gray-50/70 px-4 text-xs text-gray-600 dark:border-gray-800 dark:bg-gray-950/50 dark:text-gray-300">
+                            <div className={accountBulkMode ? "" : "sr-only"}>
+                              <Checkbox
+                                aria-label="全选筛选结果"
+                                checked={
+                                  allFilteredSelected
+                                    ? true
+                                    : someFilteredSelected
+                                      ? "indeterminate"
+                                      : false
+                                }
+                                disabled={busy}
+                                onCheckedChange={(checked) =>
+                                  setFilteredAccountsSelected(checked === true)
+                                }
+                              />
+                            </div>
+                            <div className="flex min-w-0 flex-1 items-center gap-4">
+                              <span className="font-medium">账号</span>
+                              <button
+                                type="button"
+                                onClick={() => updateAccountSort("created_at")}
+                                className="hover:text-blue-600"
+                              >
+                                创建时间
+                              </button>
+                              <span className="h-4 w-px bg-gray-200 dark:bg-gray-700" />
+                              {[
+                                ["balance", "余额"],
+                                ["consumption", "今日消费"],
+                                ["income", "今日收入"],
+                              ].map(([field, label]) => (
+                                <button
+                                  key={field}
+                                  type="button"
+                                  onClick={() =>
+                                    updateAccountSort(
+                                      field as
+                                        | "balance"
+                                        | "consumption"
+                                        | "income",
+                                    )
+                                  }
+                                  className={`rounded px-2 py-1 ${preferences?.preferences.sortField === field ? "bg-blue-100 font-medium text-blue-700 dark:bg-blue-950/50 dark:text-blue-300" : "hover:text-blue-600"}`}
+                                >
+                                  {label}
+                                  {preferences?.preferences.sortField === field
+                                    ? preferences.preferences.sortOrder ===
+                                      "asc"
+                                      ? " ↑"
+                                      : " ↓"
+                                    : ""}
+                                </button>
+                              ))}
+                              {preferences?.preferences.sortField ? (
+                                <button
+                                  type="button"
+                                  onClick={clearAccountSort}
+                                  className="text-gray-400 hover:text-gray-700 dark:hover:text-gray-100"
+                                >
+                                  ×&nbsp; 清除排序
+                                </button>
+                              ) : null}
+                            </div>
+                            <span className="shrink-0 text-gray-500">
+                              共 {filteredAccounts.length} 个账号
+                            </span>
+                            <button
+                              type="button"
+                              aria-pressed={accountReorderMode}
+                              onClick={() => {
+                                setAccountReorderMode((value) => !value)
+                                setAccountMenuId(null)
+                              }}
+                              className={`flex h-8 items-center gap-1.5 rounded-md border px-2.5 font-medium ${accountReorderMode ? "border-blue-300 bg-blue-50 text-blue-700" : "border-gray-300 bg-white hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-900"}`}
+                            >
+                              <ListOrdered className="size-3.5" />
+                              调整顺序
+                            </button>
+                            <button
+                              type="button"
+                              aria-pressed={accountBulkMode}
+                              onClick={() => {
+                                setAccountBulkMode((value) => !value)
+                                setSelectedAccountIds([])
+                              }}
+                              className={`flex h-8 items-center gap-1.5 rounded-md border px-2.5 font-medium ${accountBulkMode ? "border-blue-300 bg-blue-50 text-blue-700" : "border-gray-300 bg-white hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-900"}`}
+                            >
+                              <Settings2 className="size-3.5" />
+                              批量操作
+                            </button>
+                          </div>
+
+                          <div className="divide-y divide-gray-200 dark:divide-gray-800">
+                            {filteredAccounts.map((account) => {
+                              const accountIndex = data.accounts.findIndex(
+                                (item) => item.id === account.id,
+                              )
+                              const previousAccount =
+                                data.accounts[accountIndex - 1]
+                              const nextAccount =
+                                data.accounts[accountIndex + 1]
+                              const currency =
+                                preferences?.preferences.currencyType ?? "USD"
+                              const tagNames = account.tagIds.flatMap(
+                                (tagId) => {
+                                  const tagName = tagNameById.get(tagId)
+                                  return tagName ? [tagName] : []
+                                },
+                              )
+                              const statusDot = account.disabled
+                                ? "bg-rose-300"
+                                : account.health.status ===
+                                    SiteHealthStatus.Healthy
+                                  ? "bg-emerald-500"
+                                  : account.health.status ===
+                                      SiteHealthStatus.Error
+                                    ? "bg-red-500"
+                                    : "bg-amber-400"
+
+                              return (
+                                <div
+                                  key={account.id}
+                                  className={`relative grid min-h-[78px] grid-cols-[minmax(0,1fr)_220px_160px] items-center gap-3 px-4 py-2.5 hover:bg-gray-50/70 dark:hover:bg-gray-800/40 ${account.disabled ? "text-gray-400" : ""}`}
+                                >
+                                  <div className="flex min-w-0 items-center gap-3">
+                                    <span
+                                      className={`size-2 shrink-0 rounded-full ${statusDot}`}
+                                      title={
+                                        getHealthPresentation(account).label
+                                      }
+                                    />
+                                    <div
+                                      className={
+                                        accountBulkMode ? "" : "sr-only"
+                                      }
+                                    >
                                       <Checkbox
                                         aria-label={`选择账户 ${account.name}`}
                                         checked={selectedIdSet.has(account.id)}
@@ -2034,99 +2316,43 @@ export function AccountDashboard({
                                           )
                                         }
                                       />
-                                    </td>
-                                    <td className="px-4 py-3">
-                                      <div className="font-medium">
-                                        {account.name}
-                                      </div>
-                                      <div className="mt-0.5 max-w-64 truncate text-xs text-gray-500">
-                                        {account.baseUrl}
-                                      </div>
-                                      {account.tagIds.length > 0 ? (
-                                        <div className="mt-1.5 flex max-w-64 flex-wrap gap-1">
-                                          {account.tagIds.flatMap((tagId) => {
-                                            const tagName =
-                                              tagNameById.get(tagId)
-                                            return tagName ? (
-                                              <span
-                                                key={tagId}
-                                                className="rounded bg-gray-100 px-1.5 py-0.5 text-[11px] text-gray-600 dark:bg-gray-800 dark:text-gray-300"
-                                              >
-                                                {tagName}
-                                              </span>
-                                            ) : (
-                                              []
-                                            )
-                                          })}
-                                        </div>
-                                      ) : null}
-                                    </td>
-                                    <td className="px-4 py-3">
-                                      <div>{account.siteType}</div>
-                                      <div className="text-xs text-gray-500">
-                                        {account.authType}
-                                      </div>
-                                    </td>
-                                    <td className="px-4 py-3 font-medium tabular-nums">
-                                      {formatMoney(
-                                        account.balance[
-                                          preferences?.preferences
-                                            .currencyType ?? "USD"
-                                        ],
-                                        preferences?.preferences.currencyType ??
-                                          "USD",
-                                      )}
-                                    </td>
-                                    <td className="px-4 py-3 tabular-nums">
-                                      {preferences?.preferences
-                                        .showTodayCashflow !== false
-                                        ? formatMoney(
-                                            account.todayConsumption[
-                                              preferences?.preferences
-                                                .currencyType ?? "USD"
-                                            ],
-                                            preferences?.preferences
-                                              .currencyType ?? "USD",
-                                          )
-                                        : "已隐藏"}
-                                    </td>
-                                    {preferences?.preferences
-                                      .showHealthStatus !== false ? (
-                                      <td className="px-4 py-3">
-                                        <span
-                                          className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${health.className}`}
-                                        >
-                                          {health.label}
+                                    </div>
+                                    <div className="min-w-0">
+                                      <div className="flex min-w-0 items-center gap-1.5">
+                                        {account.disabled ? (
+                                          <span className="shrink-0 rounded bg-gray-100 px-1.5 py-0.5 text-[10px] text-gray-500 dark:bg-gray-800">
+                                            已禁用
+                                          </span>
+                                        ) : null}
+                                        <span className="shrink-0 rounded-full border border-sky-200 bg-sky-50 px-2 py-0.5 text-[10px] font-medium text-sky-700 dark:border-sky-800 dark:bg-sky-950/30 dark:text-sky-300">
+                                          {account.siteType}
                                         </span>
-                                      </td>
-                                    ) : null}
-                                    <td className="px-4 py-3 text-xs text-gray-500">
-                                      {formatTime(account.lastSyncTime)}
-                                    </td>
-                                    <td className="px-4 py-3">
-                                      <div className="flex justify-end gap-1">
-                                        <button
-                                          type="button"
-                                          disabled={busy}
-                                          aria-label={
-                                            account.pinned
-                                              ? "取消置顶账户"
-                                              : "置顶账户"
-                                          }
-                                          title={
-                                            account.pinned
-                                              ? "取消置顶账户"
-                                              : "置顶账户"
-                                          }
-                                          onClick={() =>
-                                            void onTogglePinned(account)
-                                          }
-                                          className={`flex size-8 items-center justify-center rounded-md hover:bg-gray-100 disabled:opacity-40 dark:hover:bg-gray-800 ${account.pinned ? "text-blue-600" : "text-gray-500"}`}
-                                        >
-                                          <Pin
-                                            className={`size-4 ${account.pinned ? "fill-current" : ""}`}
-                                          />
-                                        </button>
+                                        <span className="truncate text-sm font-medium text-gray-800 dark:text-gray-100">
+                                          {account.name}
+                                        </span>
+                                      </div>
+                                      <div className="mt-1 flex min-w-0 items-center gap-1 text-xs text-gray-500">
+                                        <User className="size-3 shrink-0" />
+                                        <span className="truncate">
+                                          {account.username ||
+                                            account.userId ||
+                                            "未命名账号"}
+                                        </span>
+                                      </div>
+                                      <div className="mt-0.5 flex min-w-0 items-center gap-1 text-xs text-gray-400">
+                                        <Tags className="size-3 shrink-0" />
+                                        <span className="truncate">
+                                          {tagNames.length > 0
+                                            ? tagNames.join("、")
+                                            : account.baseUrl}
+                                        </span>
+                                      </div>
+                                    </div>
+                                  </div>
+
+                                  <div className="relative flex items-center justify-center gap-2">
+                                    {accountReorderMode ? (
+                                      <>
                                         <button
                                           type="button"
                                           disabled={
@@ -2140,7 +2366,7 @@ export function AccountDashboard({
                                           onClick={() =>
                                             moveAccount(account.id, -1)
                                           }
-                                          className="flex size-8 items-center justify-center rounded-md text-gray-500 hover:bg-gray-100 hover:text-gray-900 disabled:opacity-30 dark:hover:bg-gray-800 dark:hover:text-white"
+                                          className="flex size-8 items-center justify-center rounded-md text-gray-500 hover:bg-gray-100 disabled:opacity-30 dark:hover:bg-gray-800"
                                         >
                                           <ArrowUp className="size-4" />
                                         </button>
@@ -2157,19 +2383,27 @@ export function AccountDashboard({
                                           onClick={() =>
                                             moveAccount(account.id, 1)
                                           }
-                                          className="flex size-8 items-center justify-center rounded-md text-gray-500 hover:bg-gray-100 hover:text-gray-900 disabled:opacity-30 dark:hover:bg-gray-800 dark:hover:text-white"
+                                          className="flex size-8 items-center justify-center rounded-md text-gray-500 hover:bg-gray-100 disabled:opacity-30 dark:hover:bg-gray-800"
                                         >
                                           <ArrowDown className="size-4" />
                                         </button>
+                                      </>
+                                    ) : (
+                                      <>
                                         <button
                                           type="button"
-                                          disabled={busy}
-                                          aria-label="编辑账户"
-                                          title="编辑账户"
-                                          onClick={() => setEditTarget(account)}
-                                          className="flex size-8 items-center justify-center rounded-md text-gray-500 hover:bg-gray-100 hover:text-gray-900 disabled:opacity-40 dark:hover:bg-gray-800 dark:hover:text-white"
+                                          aria-label={`打开站点 ${account.name}`}
+                                          title="打开站点"
+                                          onClick={() =>
+                                            window.open(
+                                              account.baseUrl,
+                                              "_blank",
+                                              "noopener,noreferrer",
+                                            )
+                                          }
+                                          className="flex size-8 items-center justify-center rounded-md text-gray-500 hover:bg-gray-100 hover:text-blue-600 dark:hover:bg-gray-800"
                                         >
-                                          <Pencil className="size-4" />
+                                          <ExternalLink className="size-4" />
                                         </button>
                                         <button
                                           type="button"
@@ -2180,74 +2414,186 @@ export function AccountDashboard({
                                             await onLoadKeys(account)
                                             setKeysOpen(true)
                                           }}
-                                          className="flex size-8 items-center justify-center rounded-md text-gray-500 hover:bg-gray-100 hover:text-gray-900 disabled:opacity-40 dark:hover:bg-gray-800 dark:hover:text-white"
+                                          className="flex size-8 items-center justify-center rounded-md text-gray-500 hover:bg-gray-100 hover:text-blue-600 disabled:opacity-40 dark:hover:bg-gray-800"
                                         >
                                           <KeyRound className="size-4" />
                                         </button>
                                         <button
                                           type="button"
                                           disabled={busy}
-                                          aria-label="查看模型"
-                                          title="查看模型"
+                                          aria-label="编辑账户"
+                                          title="编辑账户"
+                                          onClick={() => setEditTarget(account)}
+                                          className="flex size-8 items-center justify-center rounded-md text-gray-500 hover:bg-gray-100 hover:text-blue-600 disabled:opacity-40 dark:hover:bg-gray-800"
+                                        >
+                                          <Pencil className="size-4" />
+                                        </button>
+                                        <button
+                                          type="button"
+                                          aria-label={`更多账户操作 ${account.name}`}
+                                          title="更多操作"
+                                          onClick={() =>
+                                            setAccountMenuId((current) =>
+                                              current === account.id
+                                                ? null
+                                                : account.id,
+                                            )
+                                          }
+                                          className="flex size-8 items-center justify-center rounded-md text-gray-500 hover:bg-gray-100 hover:text-gray-900 dark:hover:bg-gray-800 dark:hover:text-white"
+                                        >
+                                          <Ellipsis className="size-4" />
+                                        </button>
+                                      </>
+                                    )}
+
+                                    {accountMenuId === account.id ? (
+                                      <div className="absolute top-9 right-0 z-20 w-44 rounded-md border border-gray-200 bg-white p-1 text-left text-sm shadow-lg dark:border-gray-700 dark:bg-gray-900">
+                                        <button
+                                          type="button"
+                                          onClick={() => {
+                                            void onTogglePinned(account)
+                                            setAccountMenuId(null)
+                                          }}
+                                          className="flex h-8 w-full items-center gap-2 rounded px-2 hover:bg-gray-100 dark:hover:bg-gray-800"
+                                        >
+                                          <Pin className="size-4" />
+                                          {account.pinned
+                                            ? "取消置顶"
+                                            : "置顶账户"}
+                                        </button>
+                                        <button
+                                          type="button"
                                           onClick={async () => {
                                             await onLoadModels(account)
                                             setModelsOpen(true)
+                                            setAccountMenuId(null)
                                           }}
-                                          className="flex size-8 items-center justify-center rounded-md text-gray-500 hover:bg-gray-100 hover:text-gray-900 disabled:opacity-40 dark:hover:bg-gray-800 dark:hover:text-white"
+                                          className="flex h-8 w-full items-center gap-2 rounded px-2 hover:bg-gray-100 dark:hover:bg-gray-800"
                                         >
                                           <Boxes className="size-4" />
+                                          查看模型
                                         </button>
                                         <button
                                           type="button"
                                           disabled={busy || account.disabled}
-                                          aria-label="刷新账户"
-                                          title="刷新账户"
-                                          onClick={() =>
+                                          onClick={() => {
                                             void onRefresh(account)
-                                          }
-                                          className="flex size-8 items-center justify-center rounded-md text-gray-500 hover:bg-gray-100 hover:text-gray-900 disabled:opacity-40 dark:hover:bg-gray-800 dark:hover:text-white"
+                                            setAccountMenuId(null)
+                                          }}
+                                          className="flex h-8 w-full items-center gap-2 rounded px-2 hover:bg-gray-100 disabled:opacity-40 dark:hover:bg-gray-800"
                                         >
                                           <RefreshCw className="size-4" />
+                                          刷新账户
                                         </button>
                                         <button
                                           type="button"
-                                          disabled={busy}
-                                          aria-label={
-                                            account.disabled
-                                              ? "启用账户"
-                                              : "停用账户"
-                                          }
-                                          title={
-                                            account.disabled
-                                              ? "启用账户"
-                                              : "停用账户"
-                                          }
-                                          onClick={() =>
+                                          onClick={() => {
                                             void onToggleDisabled(account)
-                                          }
-                                          className="flex size-8 items-center justify-center rounded-md text-gray-500 hover:bg-gray-100 hover:text-gray-900 disabled:opacity-50 dark:hover:bg-gray-800 dark:hover:text-white"
+                                            setAccountMenuId(null)
+                                          }}
+                                          className="flex h-8 w-full items-center gap-2 rounded px-2 hover:bg-gray-100 dark:hover:bg-gray-800"
                                         >
                                           <Power className="size-4" />
+                                          {account.disabled
+                                            ? "启用账户"
+                                            : "停用账户"}
                                         </button>
                                         <button
                                           type="button"
-                                          disabled={busy}
-                                          aria-label="删除账户"
-                                          title="删除账户"
-                                          onClick={() =>
+                                          onClick={() => {
                                             setDeleteTarget(account)
-                                          }
-                                          className="flex size-8 items-center justify-center rounded-md text-red-500 hover:bg-red-50 hover:text-red-700 disabled:opacity-50 dark:hover:bg-red-950/40"
+                                            setAccountMenuId(null)
+                                          }}
+                                          className="flex h-8 w-full items-center gap-2 rounded px-2 text-red-600 hover:bg-red-50 dark:hover:bg-red-950/30"
                                         >
                                           <Trash2 className="size-4" />
+                                          删除账户
                                         </button>
                                       </div>
-                                    </td>
-                                  </tr>
-                                )
-                              })}
-                            </tbody>
-                          </table>
+                                    ) : null}
+
+                                    <div className="sr-only">
+                                      <button
+                                        type="button"
+                                        disabled={busy}
+                                        aria-label={
+                                          account.pinned
+                                            ? "取消置顶账户"
+                                            : "置顶账户"
+                                        }
+                                        onClick={() =>
+                                          void onTogglePinned(account)
+                                        }
+                                      />
+                                      <button
+                                        type="button"
+                                        disabled={
+                                          busy ||
+                                          !previousAccount ||
+                                          previousAccount.pinned !==
+                                            account.pinned
+                                        }
+                                        aria-label={`上移账户 ${account.name}`}
+                                        onClick={() =>
+                                          moveAccount(account.id, -1)
+                                        }
+                                      />
+                                      <button
+                                        type="button"
+                                        disabled={
+                                          busy ||
+                                          !nextAccount ||
+                                          nextAccount.pinned !== account.pinned
+                                        }
+                                        aria-label={`下移账户 ${account.name}`}
+                                        onClick={() =>
+                                          moveAccount(account.id, 1)
+                                        }
+                                      />
+                                    </div>
+                                  </div>
+
+                                  <div className="text-right tabular-nums">
+                                    <div className="text-lg font-semibold text-gray-800 dark:text-gray-100">
+                                      {formatMoney(
+                                        account.balance[currency],
+                                        currency,
+                                      )}
+                                    </div>
+                                    {preferences?.preferences
+                                      .showTodayCashflow !== false ? (
+                                      <div className="mt-1 flex justify-end gap-1.5 text-xs">
+                                        <span
+                                          className={
+                                            account.todayConsumption[currency] >
+                                            0
+                                              ? "text-emerald-500"
+                                              : "text-gray-400"
+                                          }
+                                        >
+                                          -
+                                          {formatMoney(
+                                            account.todayConsumption[currency],
+                                            currency,
+                                          )}
+                                        </span>
+                                        <span className="text-gray-400">
+                                          +
+                                          {formatMoney(
+                                            (account.todayIncome ?? {
+                                              USD: 0,
+                                              CNY: 0,
+                                            })[currency],
+                                            currency,
+                                          )}
+                                        </span>
+                                      </div>
+                                    ) : null}
+                                  </div>
+                                </div>
+                              )
+                            })}
+                          </div>
                         </div>
                       )}
                     </section>
@@ -2283,6 +2629,7 @@ export function AccountDashboard({
                       open
                       history={history}
                       onClose={() => navigateToPage("overview")}
+                      onRefresh={onLoadHistory}
                     />
                   </WebDialogInlineProvider>
                 ) : activePage === "keys" ? (
@@ -2293,35 +2640,37 @@ export function AccountDashboard({
                       keys={apiKeys}
                       createdSecret={createdKeySecret}
                       title="密钥管理"
+                      accounts={data.accounts}
                       onClose={() => navigateToPage("overview")}
                       onCreate={onCreateKey}
                       onDelete={onDeleteKey}
                       onUpdate={onUpdateKey}
+                      onSelectAccount={onLoadKeys}
+                      onRefresh={async () => {
+                        const account = data.accounts.find(
+                          (item) => item.id === apiKeys?.accountId,
+                        )
+                        if (account) await onLoadKeys(account)
+                      }}
                     />
                   </WebDialogInlineProvider>
                 ) : activePage === "managedSiteChannels" ||
                   activePage === "managedSiteModelSync" ? (
                   <WebDialogInlineProvider>
-                    <ManagedSitesDialog
-                      open
+                    <ManagedSitesDashboard
+                      mode={
+                        activePage === "managedSiteChannels"
+                          ? "channels"
+                          : "sync"
+                      }
                       busy={busy}
                       connections={managedSites}
                       channels={managedChannels}
-                      title={
-                        activePage === "managedSiteChannels"
-                          ? "渠道管理"
-                          : "模型同步"
-                      }
                       onClose={() => navigateToPage("overview")}
-                      onCreate={onCreateManagedSite}
-                      onDeleteConnection={onDeleteManagedSite}
                       onLoadChannels={onLoadManagedChannels}
                       onDeleteChannel={onDeleteManagedChannel}
                       onCreateChannel={onCreateManagedChannel}
-                      onUpdateChannel={onUpdateManagedChannel}
                       onSyncModels={onSyncManagedSiteModels}
-                      channelConfigs={channelConfigs}
-                      onUpdateChannelConfig={onUpdateChannelConfig}
                     />
                   </WebDialogInlineProvider>
                 ) : activePage === "importExport" ? (
@@ -2365,8 +2714,21 @@ export function AccountDashboard({
                         open
                         busy={busy}
                         catalog={allModelCatalog}
+                        profiles={credentialProfiles?.profiles ?? []}
                         onClose={() => navigateToPage("overview")}
                         onRefresh={onLoadAllModels}
+                        onLoadProfileModels={onLoadCredentialProfileModels}
+                        onVerifyProfile={onVerifyCredentialProfile}
+                        onOpenAccountKeys={(accountId) => {
+                          const account = data.accounts.find(
+                            (item) => item.id === accountId,
+                          )
+                          if (!account) return
+                          void (async () => {
+                            await onLoadKeys(account)
+                            navigateToPage("keys")
+                          })()
+                        }}
                       />
                     ) : activePage === "automation" ? (
                       <AutomationSettingsDialog
@@ -2376,6 +2738,7 @@ export function AccountDashboard({
                         title="自动签到"
                         onClose={() => navigateToPage("overview")}
                         onSave={onSaveAutomation}
+                        onRun={onRunCheckIn}
                       />
                     ) : activePage === "runtimeCapabilities" ? (
                       <RuntimeCapabilitiesDialog
@@ -2482,6 +2845,7 @@ export function AccountDashboard({
         open={historyOpen}
         history={history}
         onClose={() => setHistoryOpen(false)}
+        onRefresh={onLoadHistory}
       />
       <UsageHistoryDialog
         open={usageHistoryOpen}
@@ -2518,18 +2882,38 @@ export function AccountDashboard({
         open={allModelsOpen}
         busy={busy}
         catalog={allModelCatalog}
+        profiles={credentialProfiles?.profiles ?? []}
         onClose={() => setAllModelsOpen(false)}
         onRefresh={onLoadAllModels}
+        onLoadProfileModels={onLoadCredentialProfileModels}
+        onVerifyProfile={onVerifyCredentialProfile}
+        onOpenAccountKeys={(accountId) => {
+          const account = data.accounts.find((item) => item.id === accountId)
+          if (!account) return
+          void (async () => {
+            await onLoadKeys(account)
+            setAllModelsOpen(false)
+            setKeysOpen(true)
+          })()
+        }}
       />
       <KeyManagementDialog
         open={keysOpen}
         busy={busy}
         keys={apiKeys}
         createdSecret={createdKeySecret}
+        accounts={data.accounts}
         onClose={() => setKeysOpen(false)}
         onCreate={onCreateKey}
         onDelete={onDeleteKey}
         onUpdate={onUpdateKey}
+        onSelectAccount={onLoadKeys}
+        onRefresh={async () => {
+          const account = data.accounts.find(
+            (item) => item.id === apiKeys?.accountId,
+          )
+          if (account) await onLoadKeys(account)
+        }}
       />
       <CredentialProfilesDialog
         open={credentialProfilesOpen}

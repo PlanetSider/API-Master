@@ -33,12 +33,27 @@ export function SiteAnnouncementsDialog({
   onMarkAllRead,
 }: Props) {
   const [siteKey, setSiteKey] = useState<string>("")
+  const [siteType, setSiteType] = useState<string>("")
+  const [readFilter, setReadFilter] = useState<"all" | "unread" | "read">("all")
+  const siteTypeOptions = useMemo(
+    () =>
+      [
+        ...new Set(
+          (announcements?.records ?? []).map((record) => record.siteType),
+        ),
+      ].sort(),
+    [announcements?.records],
+  )
   const records = useMemo(
     () =>
       (announcements?.records ?? []).filter(
-        (record) => !siteKey || record.siteKey === siteKey,
+        (record) =>
+          (!siteKey || record.siteKey === siteKey) &&
+          (!siteType || record.siteType === siteType) &&
+          (readFilter === "all" ||
+            (readFilter === "read" ? record.read : !record.read)),
       ),
-    [announcements?.records, siteKey],
+    [announcements?.records, readFilter, siteKey, siteType],
   )
 
   return (
@@ -46,7 +61,7 @@ export function SiteAnnouncementsDialog({
       open={open}
       onClose={onClose}
       title="网站公告"
-      description="从已启用账户的站点读取公告，并在服务端保存已读状态。"
+      description="自动抓取和展示各站点的重要公告，包括维护通知、开站优惠、费率调整等。"
       inlineActions={
         <>
           <button
@@ -92,13 +107,31 @@ export function SiteAnnouncementsDialog({
         </>
       }
     >
-      <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-        <label className="flex items-center gap-2 text-sm">
-          <span className="text-gray-500">站点</span>
+      <div className="mb-4 grid gap-3 sm:grid-cols-3">
+        {[
+          ["公告总数", announcements?.records.length ?? 0, "text-blue-600"],
+          ["未读公告", announcements?.unreadCount ?? 0, "text-amber-600"],
+          ["站点数量", announcements?.sites.length ?? 0, "text-gray-700"],
+        ].map(([label, value, tone]) => (
+          <div
+            key={label}
+            className="rounded-lg border border-gray-200 px-4 py-3 dark:border-gray-700"
+          >
+            <div className="text-xs text-gray-500">{label}</div>
+            <div className={`mt-1 text-xl font-semibold tabular-nums ${tone}`}>
+              {value}
+            </div>
+          </div>
+        ))}
+      </div>
+
+      <div className="mb-4 grid gap-3 sm:grid-cols-3">
+        <label className="text-sm">
+          <span className="sr-only">站点</span>
           <select
             value={siteKey}
             onChange={(event) => setSiteKey(event.target.value)}
-            className="h-9 max-w-64 rounded-md border border-gray-300 bg-white px-2 text-sm dark:border-gray-700 dark:bg-gray-950"
+            className="h-9 w-full rounded-md border border-gray-300 bg-white px-2 text-sm dark:border-gray-700 dark:bg-gray-950"
           >
             <option value="">全部站点</option>
             {(announcements?.sites ?? []).map((site) => (
@@ -108,9 +141,29 @@ export function SiteAnnouncementsDialog({
             ))}
           </select>
         </label>
-        <span className="text-xs text-gray-500">
-          未读 {announcements?.unreadCount ?? 0} 条
-        </span>
+        <select
+          value={siteType}
+          onChange={(event) => setSiteType(event.target.value)}
+          className="h-9 rounded-md border border-gray-300 bg-white px-2 text-sm dark:border-gray-700 dark:bg-gray-950"
+        >
+          <option value="">全部类型</option>
+          {siteTypeOptions.map((value) => (
+            <option key={value} value={value}>
+              {value}
+            </option>
+          ))}
+        </select>
+        <select
+          value={readFilter}
+          onChange={(event) =>
+            setReadFilter(event.target.value as typeof readFilter)
+          }
+          className="h-9 rounded-md border border-gray-300 bg-white px-2 text-sm dark:border-gray-700 dark:bg-gray-950"
+        >
+          <option value="all">全部状态</option>
+          <option value="unread">仅未读</option>
+          <option value="read">已读</option>
+        </select>
       </div>
 
       {announcements?.sites.some((site) => site.lastError) ? (
@@ -126,11 +179,11 @@ export function SiteAnnouncementsDialog({
           <p className="text-xs">可以点击“立即检查”读取最新内容。</p>
         </div>
       ) : (
-        <div className="divide-y divide-gray-200 dark:divide-gray-700">
+        <div className="space-y-3">
           {records.map((record) => (
             <article
               key={record.id}
-              className={`py-4 first:pt-0 last:pb-0 ${record.read ? "opacity-75" : ""}`}
+              className={`rounded-lg border border-gray-200 p-4 dark:border-gray-700 ${record.read ? "opacity-75" : ""}`}
             >
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0">
@@ -142,7 +195,11 @@ export function SiteAnnouncementsDialog({
                       <span className="rounded-full bg-blue-100 px-2 py-0.5 text-[11px] text-blue-700 dark:bg-blue-950/60 dark:text-blue-300">
                         未读
                       </span>
-                    ) : null}
+                    ) : (
+                      <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-[11px] text-emerald-700">
+                        已读
+                      </span>
+                    )}
                   </div>
                   <div className="mt-1 text-xs text-gray-500">
                     {record.siteName || record.baseUrl} ·{" "}

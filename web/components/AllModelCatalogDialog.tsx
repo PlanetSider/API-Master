@@ -1,589 +1,429 @@
 import {
-  ChevronDown,
-  ChevronLeft,
-  ChevronRight,
-  Copy,
   Cpu,
   Info,
-  LayoutGrid,
+  KeyRound,
+  LoaderCircle,
   RefreshCw,
-  Search,
   TrendingDown,
 } from "lucide-react"
-import { useMemo, useRef, useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 
+import { Button, IconButton } from "~/components/ui"
 import {
-  calculateWeightedTokenPrice,
   DEFAULT_MODEL_PRICE_COMPARISON_PRESET_ID,
+  DEFAULT_MODEL_PRICE_COMPARISON_WEIGHTS,
   MODEL_PRICE_COMPARISON_PRESET_IDS,
   MODEL_PRICE_COMPARISON_PRESETS,
+  type ModelPriceComparisonPresetId,
   type ModelPriceComparisonWeights,
 } from "~/features/ModelList/priceComparison"
 import type {
-  WebAllModelCatalogOffer,
   WebAllModelCatalogResponse,
-  WebModelCatalogPrice,
+  WebApiCredentialProfileModelCatalogResponse,
+  WebApiCredentialProfileSummary,
+  WebApiCredentialProfileVerificationResponse,
 } from "~/web/contracts"
 
+import { ModelControlPanel } from "./modelCatalog/ModelControlPanel"
+import { ModelDisplay } from "./modelCatalog/ModelDisplay"
+import {
+  ALL_ACCOUNTS_SOURCE_VALUE,
+  ModelSourceSection,
+  toAccountSourceValue,
+  toProfileSourceValue,
+} from "./modelCatalog/ModelSourceSection"
+import { selectBestPrice } from "./modelCatalog/pricing"
+import { ProviderTabs } from "./modelCatalog/ProviderTabs"
+import type {
+  ModelCapabilityKey,
+  ModelCatalogBillingMode,
+  ModelCatalogOffer,
+  ModelCatalogSortMode,
+  ModelOfferRow,
+  ModelVerificationFilter,
+} from "./modelCatalog/types"
 import { WebDialog } from "./WebDialog"
 
 interface AllModelCatalogDialogProps {
   open: boolean
   busy: boolean
   catalog: WebAllModelCatalogResponse | null
+  profiles?: WebApiCredentialProfileSummary[]
   onClose: () => void
   onRefresh: () => Promise<void>
+  onLoadProfileModels?: (
+    profile: WebApiCredentialProfileSummary,
+  ) => Promise<WebApiCredentialProfileModelCatalogResponse>
+  onVerifyProfile?: (
+    profile: WebApiCredentialProfileSummary,
+    modelId?: string,
+  ) => Promise<WebApiCredentialProfileVerificationResponse>
+  onOpenAccountKeys?: (accountId: string) => void
 }
 
-type SortMode = "default" | "price-asc" | "price-desc" | "model-cheapest-first"
-type BillingMode = "all" | "token" | "per-call"
-type PriceComparisonPresetId = keyof typeof MODEL_PRICE_COMPARISON_PRESETS
-type AggregatedModel = WebAllModelCatalogResponse["models"][number]
-
-interface ModelOfferRow {
-  id: string
-  displayName?: string
-  vendor?: string
-  description?: string
-  offer: WebAllModelCatalogOffer
-  selectedPrice: WebModelCatalogPrice | null
-  priceScore: number | null
+interface ProfileCatalogState {
+  profileId: string
+  status: "loading" | "success" | "error"
+  catalog?: WebApiCredentialProfileModelCatalogResponse
+  error?: string
 }
 
-const statusLabels = {
-  success: "已加载",
-  error: "加载失败",
-  unsupported: "暂未适配",
-  skipped: "已停用",
-} as const
-
-const presetOptions: Array<{
-  value: PriceComparisonPresetId
-  label: string
-}> = [
-  {
-    value: MODEL_PRICE_COMPARISON_PRESET_IDS.AZURE_CONVERSATION,
-    label: "普通对话",
-  },
-  {
-    value: MODEL_PRICE_COMPARISON_PRESET_IDS.MOONCAKE_TOOL_AGENT,
-    label: "Tool / Agent",
-  },
-  {
-    value: MODEL_PRICE_COMPARISON_PRESET_IDS.AZURE_CODE,
-    label: "代码补全",
-  },
-  {
-    value: MODEL_PRICE_COMPARISON_PRESET_IDS.TRACELAB_CODING_AGENT,
-    label: "编码 Agent",
-  },
-]
-
-const formatMoney = (value: number, currency: "USD" | "CNY") => {
-  const symbol = currency === "USD" ? "$" : "¥"
-  if (value === 0) return `${symbol}0`
-  if (value < 0.0001) return `${symbol}${value.toExponential(2)}`
-  if (value < 0.01) return `${symbol}${value.toFixed(6)}`
-  if (value < 1) return `${symbol}${value.toFixed(4)}`
-  return `${symbol}${value.toFixed(2)}`
-}
-
-const getExchangeRate = (offer: WebAllModelCatalogOffer) =>
-  typeof offer.exchangeRate === "number" &&
-  Number.isFinite(offer.exchangeRate) &&
-  offer.exchangeRate > 0
-    ? offer.exchangeRate
-    : 1
-
-const toDisplayAmount = (
-  value: number,
-  offer: WebAllModelCatalogOffer,
-  showRealPrice: boolean,
-) => (showRealPrice ? value * getExchangeRate(offer) : value)
-
-const getPriceScore = (
-  price: WebModelCatalogPrice,
-  weights: ModelPriceComparisonWeights,
-  offer: WebAllModelCatalogOffer,
-  showRealPrice: boolean,
-): number | null => {
-  if (price.precision === "unavailable") return null
-  const exchangeFactor = showRealPrice ? getExchangeRate(offer) : 1
-
-  if (price.billingMode === "token") {
-    if (
-      price.inputUsdPerMillionTokens === undefined ||
-      price.outputUsdPerMillionTokens === undefined
-    ) {
-      return null
-    }
-    const score = calculateWeightedTokenPrice(
-      {
-        input: price.inputUsdPerMillionTokens,
-        output: price.outputUsdPerMillionTokens,
-        ...(price.cacheReadUsdPerMillionTokens === undefined
-          ? {}
-          : { cacheRead: price.cacheReadUsdPerMillionTokens }),
-        ...(price.cacheWriteUsdPerMillionTokens === undefined
-          ? {}
-          : { cacheWrite: price.cacheWriteUsdPerMillionTokens }),
-      },
-      weights,
-    )
-    return score === null ? null : score * exchangeFactor
+const getCapabilities = (offer: ModelCatalogOffer): ModelCapabilityKey[] => {
+  const metadata = offer.metadata
+  if (!metadata) return []
+  const capabilities: ModelCapabilityKey[] = []
+  const inputModalities = new Set(metadata.modalities?.input ?? [])
+  const outputModalities = new Set(metadata.modalities?.output ?? [])
+  if (inputModalities.has("image")) capabilities.push("image-input")
+  if (outputModalities.has("image")) capabilities.push("image-output")
+  if (inputModalities.has("audio")) capabilities.push("audio-input")
+  if (outputModalities.has("audio")) capabilities.push("audio-output")
+  if (inputModalities.has("video")) capabilities.push("video-input")
+  if (outputModalities.has("video")) capabilities.push("video-output")
+  if (inputModalities.has("pdf")) capabilities.push("pdf")
+  if (metadata.capabilities?.reasoning) capabilities.push("reasoning")
+  if (metadata.capabilities?.toolCall) capabilities.push("tool-call")
+  if (metadata.capabilities?.structuredOutput) {
+    capabilities.push("structured-output")
   }
-
-  if (typeof price.usdPerCall === "number") {
-    return Number.isFinite(price.usdPerCall)
-      ? price.usdPerCall * exchangeFactor
-      : null
-  }
-  if (!price.usdPerCall) return null
-
-  const inputWeight = weights.input ?? 0
-  const outputWeight = weights.output ?? 0
-  const totalWeight = inputWeight + outputWeight
-  if (totalWeight <= 0) return null
-  return (
-    ((price.usdPerCall.input * inputWeight +
-      price.usdPerCall.output * outputWeight) /
-      totalWeight) *
-    exchangeFactor
-  )
+  if (metadata.capabilities?.attachment) capabilities.push("attachment")
+  return capabilities
 }
 
-const selectBestPrice = (
-  offer: WebAllModelCatalogOffer,
-  billingMode: BillingMode,
-  selectedGroup: string,
-  weights: ModelPriceComparisonWeights,
-  showRealPrice: boolean,
-) => {
-  const candidates = (offer.prices ?? []).filter(
-    (price) =>
-      (billingMode === "all" || price.billingMode === billingMode) &&
-      (!selectedGroup || price.group === selectedGroup),
-  )
-  let bestPrice: WebModelCatalogPrice | null = null
-  let bestScore: number | null = null
-
-  for (const price of candidates) {
-    const score = getPriceScore(price, weights, offer, showRealPrice)
-    if (score !== null && (bestScore === null || score < bestScore)) {
-      bestPrice = price
-      bestScore = score
-    } else if (!bestPrice) {
-      bestPrice = price
-    }
-  }
-
-  return { selectedPrice: bestPrice, priceScore: bestScore }
-}
-
-function PriceSummary({
-  price,
-  offer,
-  showRealPrice,
-}: {
-  price: WebModelCatalogPrice | null
-  offer: WebAllModelCatalogOffer
-  showRealPrice: boolean
-}) {
-  if (!price || price.precision === "unavailable") {
-    return (
-      <span className="text-xs font-medium text-gray-500 dark:text-gray-400">
-        暂无可比较价格
-      </span>
-    )
-  }
-
-  const currency = showRealPrice ? "CNY" : "USD"
-  if (price.billingMode === "per-call") {
-    if (typeof price.usdPerCall === "number") {
-      return (
-        <div className="flex flex-wrap items-center gap-2 text-sm">
-          <span className="text-gray-600 dark:text-gray-300">每次调用:</span>
-          <span className="font-medium text-purple-600 dark:text-purple-400">
-            {formatMoney(
-              toDisplayAmount(price.usdPerCall, offer, showRealPrice),
-              currency,
-            )}
-          </span>
-        </div>
-      )
-    }
-    if (price.usdPerCall) {
-      return (
-        <div className="flex flex-wrap gap-x-5 gap-y-1 text-sm">
-          <span className="text-gray-600 dark:text-gray-300">
-            输入:{" "}
-            <strong className="font-medium text-blue-600 dark:text-blue-400">
-              {formatMoney(
-                toDisplayAmount(price.usdPerCall.input, offer, showRealPrice),
-                currency,
-              )}
-            </strong>
-          </span>
-          <span className="text-gray-600 dark:text-gray-300">
-            输出:{" "}
-            <strong className="font-medium text-emerald-600 dark:text-emerald-400">
-              {formatMoney(
-                toDisplayAmount(price.usdPerCall.output, offer, showRealPrice),
-                currency,
-              )}
-            </strong>
-          </span>
-        </div>
-      )
-    }
-  }
-
-  const priceItems = [
-    {
-      key: "input",
-      label: "输入:",
-      amount: price.inputUsdPerMillionTokens,
-      className: "text-blue-600 dark:text-blue-400",
-    },
-    {
-      key: "output",
-      label: "输出:",
-      amount: price.outputUsdPerMillionTokens,
-      className: "text-emerald-600 dark:text-emerald-400",
-    },
-    {
-      key: "cache-read",
-      label: "缓存读取:",
-      amount: price.cacheReadUsdPerMillionTokens,
-      className: "text-amber-600 dark:text-amber-400",
-    },
-    {
-      key: "cache-write",
-      label: "缓存写入:",
-      amount: price.cacheWriteUsdPerMillionTokens,
-      className: "text-violet-600 dark:text-violet-400",
-    },
-  ].filter((item) => item.amount !== undefined)
-
-  return (
-    <div className="flex flex-wrap gap-x-5 gap-y-1 text-sm">
-      {priceItems.map((item) => (
-        <span key={item.key} className="text-gray-600 dark:text-gray-300">
-          {item.label}{" "}
-          <strong className={`font-medium ${item.className}`}>
-            {formatMoney(
-              toDisplayAmount(item.amount ?? 0, offer, showRealPrice),
-              currency,
-            )}
-            /M
-          </strong>
-        </span>
-      ))}
-    </div>
-  )
-}
-
-function ModelOfferCard({
-  row,
-  showRealPrice,
-  showEndpointTypes,
-  isLowestPrice,
-  comparisonOffer = false,
-}: {
-  row: ModelOfferRow
-  showRealPrice: boolean
-  showEndpointTypes: boolean
-  isLowestPrice?: boolean
-  comparisonOffer?: boolean
-}) {
-  const [expanded, setExpanded] = useState(false)
-  const hasDetails =
-    (row.offer.enableGroups?.length ?? 0) > 0 ||
-    (showEndpointTypes && (row.offer.supportedEndpointTypes?.length ?? 0) > 0)
-  const displayName = row.offer.displayName ?? row.displayName
-  const vendor = row.offer.vendor ?? row.vendor
-  const description = row.offer.description ?? row.description
-
-  return (
-    <article
-      className={
-        comparisonOffer
-          ? "bg-transparent px-3 py-3 sm:px-4"
-          : "rounded-md border border-gray-200 bg-white p-4 shadow-sm transition-colors hover:border-blue-300 dark:border-gray-700 dark:bg-gray-900 dark:hover:border-blue-700"
-      }
-    >
-      <div className="flex min-w-0 flex-wrap items-start gap-2">
-        <div className="min-w-0 flex-1">
-          <div className="flex min-w-0 flex-wrap items-center gap-2">
-            <h3 className="min-w-0 font-mono text-sm font-semibold break-all text-gray-900 dark:text-white">
-              {row.id}
-            </h3>
-            {vendor ? (
-              <span className="rounded-md bg-gray-100 px-2 py-0.5 text-xs text-gray-600 dark:bg-gray-800 dark:text-gray-300">
-                {vendor}
-              </span>
-            ) : null}
-            {isLowestPrice ? (
-              <span className="rounded-md bg-emerald-50 px-2 py-0.5 text-xs font-medium text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-300">
-                最低价
-              </span>
-            ) : null}
-            {row.selectedPrice?.precision === "estimated" ? (
-              <span className="rounded-md bg-amber-50 px-2 py-0.5 text-xs font-medium text-amber-700 dark:bg-amber-950/50 dark:text-amber-300">
-                估算价格
-              </span>
-            ) : null}
-          </div>
-          {displayName && displayName !== row.id ? (
-            <p className="mt-1 text-sm text-gray-700 dark:text-gray-200">
-              {displayName}
-            </p>
-          ) : null}
-        </div>
-        <div className="flex max-w-full shrink-0 items-center gap-1">
-          <span
-            className="max-w-48 truncate rounded-md border border-gray-200 px-2 py-1 text-xs text-gray-600 dark:border-gray-700 dark:text-gray-300"
-            title={row.offer.accountName}
-          >
-            {row.offer.accountName}
-          </span>
-          <button
-            type="button"
-            title="复制模型名称"
-            aria-label={`复制模型名称 ${row.id}`}
-            onClick={() => void navigator.clipboard?.writeText(row.id)}
-            className="flex size-8 items-center justify-center rounded-md text-gray-500 hover:bg-gray-100 hover:text-gray-900 dark:hover:bg-gray-800 dark:hover:text-white"
-          >
-            <Copy className="size-3.5" />
-          </button>
-          {hasDetails ? (
-            <button
-              type="button"
-              title={expanded ? "收起详细信息" : "展开详细信息"}
-              aria-label={`${expanded ? "收起" : "展开"} ${row.id} 详细信息`}
-              aria-expanded={expanded}
-              onClick={() => setExpanded((current) => !current)}
-              className="flex size-8 items-center justify-center rounded-md text-gray-500 hover:bg-gray-100 hover:text-gray-900 dark:hover:bg-gray-800 dark:hover:text-white"
-            >
-              <ChevronDown
-                className={`size-4 transition-transform ${expanded ? "rotate-180" : ""}`}
-              />
-            </button>
-          ) : null}
-        </div>
-      </div>
-
-      {description ? (
-        <p className="mt-2 line-clamp-2 text-xs leading-5 text-gray-500 dark:text-gray-400">
-          {description}
-        </p>
-      ) : null}
-
-      <div className="mt-2 flex min-w-0 flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
-        <PriceSummary
-          price={row.selectedPrice}
-          offer={row.offer}
-          showRealPrice={showRealPrice}
-        />
-        <div className="flex shrink-0 flex-wrap items-center gap-1 text-xs">
-          {row.selectedPrice?.group ? (
-            <span className="rounded-md border border-gray-200 px-2 py-0.5 text-gray-600 dark:border-gray-700 dark:text-gray-300">
-              {row.selectedPrice.group} · {row.selectedPrice.groupRatio}x
-            </span>
-          ) : null}
-          <span className="rounded-md bg-blue-50 px-2 py-0.5 text-blue-700 dark:bg-blue-950/50 dark:text-blue-300">
-            {row.selectedPrice?.billingMode === "per-call"
-              ? "按次计费"
-              : "按量计费"}
-          </span>
-        </div>
-      </div>
-
-      {expanded ? (
-        <div className="mt-4 space-y-3 border-t border-gray-200 pt-3 text-xs dark:border-gray-700">
-          {(row.offer.enableGroups?.length ?? 0) > 0 ? (
-            <div>
-              <span className="font-medium text-gray-700 dark:text-gray-200">
-                当前账号可用分组
-              </span>
-              <div className="mt-2 flex flex-wrap gap-1">
-                {row.offer.enableGroups?.map((group) => (
-                  <span
-                    key={group}
-                    className="rounded-md bg-gray-100 px-2 py-1 text-gray-600 dark:bg-gray-800 dark:text-gray-300"
-                  >
-                    {group}
-                  </span>
-                ))}
-              </div>
-            </div>
-          ) : null}
-          {showEndpointTypes &&
-          (row.offer.supportedEndpointTypes?.length ?? 0) > 0 ? (
-            <div>
-              <span className="font-medium text-gray-700 dark:text-gray-200">
-                端点类型
-              </span>
-              <div className="mt-2 flex flex-wrap gap-1">
-                {row.offer.supportedEndpointTypes?.map((endpoint) => (
-                  <code
-                    key={endpoint}
-                    className="rounded-md bg-gray-100 px-2 py-1 text-gray-600 dark:bg-gray-800 dark:text-gray-300"
-                  >
-                    {endpoint}
-                  </code>
-                ))}
-              </div>
-            </div>
-          ) : null}
-        </div>
-      ) : null}
-    </article>
-  )
-}
+const getErrorMessage = (error: unknown) =>
+  error instanceof Error ? error.message : "加载失败，请稍后重试。"
 
 export function AllModelCatalogDialog({
   open,
   busy,
   catalog,
+  profiles = [],
   onClose,
   onRefresh,
+  onLoadProfileModels,
+  onVerifyProfile,
+  onOpenAccountKeys,
 }: AllModelCatalogDialogProps) {
+  const [selectedSourceValue, setSelectedSourceValue] = useState("")
+  const [activeAccountIds, setActiveAccountIds] = useState<string[]>([])
+  const [excludedGroupsByAccountId, setExcludedGroupsByAccountId] = useState<
+    Record<string, string[]>
+  >({})
+  const [profileCatalogState, setProfileCatalogState] =
+    useState<ProfileCatalogState | null>(null)
   const [search, setSearch] = useState("")
-  const [accountId, setAccountId] = useState("")
-  const [vendor, setVendor] = useState("")
-  const [sortMode, setSortMode] = useState<SortMode>("default")
-  const [billingMode, setBillingMode] = useState<BillingMode>("all")
-  const [selectedGroup, setSelectedGroup] = useState("")
+  const [sortMode, setSortMode] = useState<ModelCatalogSortMode>("default")
+  const [billingMode, setBillingMode] = useState<ModelCatalogBillingMode>("all")
+  const [selectedGroups, setSelectedGroups] = useState<string[]>([])
+  const [selectedCapabilities, setSelectedCapabilities] = useState<
+    ModelCapabilityKey[]
+  >([])
+  const [selectedVerificationResults, setSelectedVerificationResults] =
+    useState<ModelVerificationFilter[]>(["pass", "fail", "unverified"])
   const [showRealPrice, setShowRealPrice] = useState(false)
   const [showEndpointTypes, setShowEndpointTypes] = useState(false)
-  const [presetId, setPresetId] = useState<PriceComparisonPresetId>(
+  const [selectedVendor, setSelectedVendor] = useState("")
+  const [presetId, setPresetId] = useState<ModelPriceComparisonPresetId>(
     DEFAULT_MODEL_PRICE_COMPARISON_PRESET_ID,
   )
-  const providerTabsRef = useRef<HTMLDivElement>(null)
-  const weights = MODEL_PRICE_COMPARISON_PRESETS[presetId].weights
+  const [weights, setWeights] = useState<ModelPriceComparisonWeights>({
+    ...DEFAULT_MODEL_PRICE_COMPARISON_WEIGHTS,
+  })
+  const [verifications, setVerifications] = useState<
+    Record<
+      string,
+      { status: "pass" | "fail"; latencyMs: number; summary: string }
+    >
+  >({})
+  const [verifyingKeys, setVerifyingKeys] = useState<string[]>([])
 
-  const allRows = useMemo(
+  useEffect(() => {
+    if (!catalog && profiles.length === 0) return
+    const sourceStillExists =
+      selectedSourceValue === ALL_ACCOUNTS_SOURCE_VALUE
+        ? (catalog?.accounts.length ?? 0) > 0
+        : selectedSourceValue.startsWith("account:")
+          ? catalog?.accounts.some(
+              (account) =>
+                toAccountSourceValue(account.accountId) === selectedSourceValue,
+            )
+          : profiles.some(
+              (profile) =>
+                toProfileSourceValue(profile.id) === selectedSourceValue,
+            )
+    if (!sourceStillExists) {
+      setSelectedSourceValue(
+        (catalog?.accounts.length ?? 0) > 0
+          ? toAccountSourceValue(catalog!.accounts[0]!.accountId)
+          : profiles[0]
+            ? toProfileSourceValue(profiles[0].id)
+            : "",
+      )
+    }
+  }, [catalog, profiles, selectedSourceValue])
+
+  const selectedProfile = selectedSourceValue.startsWith("profile:")
+    ? profiles.find(
+        (profile) => toProfileSourceValue(profile.id) === selectedSourceValue,
+      )
+    : undefined
+  const selectedAccount = selectedSourceValue.startsWith("account:")
+    ? catalog?.accounts.find(
+        (account) =>
+          toAccountSourceValue(account.accountId) === selectedSourceValue,
+      )
+    : undefined
+  const isAllAccounts = selectedSourceValue === ALL_ACCOUNTS_SOURCE_VALUE
+
+  const loadProfileCatalog = async (
+    profile: WebApiCredentialProfileSummary,
+  ) => {
+    if (!onLoadProfileModels) return
+    setProfileCatalogState({ profileId: profile.id, status: "loading" })
+    try {
+      const response = await onLoadProfileModels(profile)
+      setProfileCatalogState({
+        profileId: profile.id,
+        status: "success",
+        catalog: response,
+      })
+    } catch (error) {
+      setProfileCatalogState({
+        profileId: profile.id,
+        status: "error",
+        error: getErrorMessage(error),
+      })
+    }
+  }
+
+  const handleSourceChange = (value: string) => {
+    setSelectedSourceValue(value)
+    setActiveAccountIds([])
+    setSelectedVendor("")
+    if (value.startsWith("profile:")) {
+      const profile = profiles.find(
+        (item) => toProfileSourceValue(item.id) === value,
+      )
+      if (profile) void loadProfileCatalog(profile)
+    }
+  }
+
+  const accountRows = useMemo(
     () =>
       (catalog?.models ?? []).flatMap((model) =>
-        model.accounts.map((offer) => ({ model, offer })),
+        model.accounts.flatMap((rawOffer) => {
+          if (
+            selectedAccount &&
+            rawOffer.accountId !== selectedAccount.accountId
+          ) {
+            return []
+          }
+          if (
+            isAllAccounts &&
+            activeAccountIds.length > 0 &&
+            !activeAccountIds.includes(rawOffer.accountId)
+          ) {
+            return []
+          }
+          const offer: ModelCatalogOffer = {
+            ...rawOffer,
+            sourceKind: "account",
+          }
+          return [{ model, offer }]
+        }),
       ),
-    [catalog?.models],
+    [activeAccountIds, catalog?.models, isAllAccounts, selectedAccount],
   )
-  const hasPricing = useMemo(
-    () =>
-      allRows.some(({ offer }) =>
-        offer.prices?.some((price) => price.precision !== "unavailable"),
-      ),
-    [allRows],
+
+  const profileRows = useMemo(() => {
+    if (
+      !selectedProfile ||
+      profileCatalogState?.profileId !== selectedProfile.id ||
+      profileCatalogState.status !== "success" ||
+      !profileCatalogState.catalog
+    ) {
+      return []
+    }
+    return profileCatalogState.catalog.models.map((model) => {
+      const offer: ModelCatalogOffer = {
+        accountId: selectedProfile.id,
+        profileId: selectedProfile.id,
+        accountName: selectedProfile.name,
+        sourceKind: "profile",
+        sourceUrl: selectedProfile.baseUrl,
+      }
+      return { model, offer }
+    })
+  }, [profileCatalogState, selectedProfile])
+
+  const sourceRows = selectedProfile ? profileRows : accountRows
+  const supportsPricing = sourceRows.some(({ offer }) =>
+    offer.prices?.some((price) => price.precision !== "unavailable"),
   )
+  const supportsVerification = !!selectedProfile && !!onVerifyProfile
   const availableGroups = useMemo(
     () =>
       Array.from(
         new Set(
-          allRows
-            .filter(({ offer }) => !accountId || offer.accountId === accountId)
-            .flatMap(({ offer }) =>
-              (offer.prices ?? []).flatMap((price) =>
-                price.group ? [price.group] : [],
-              ),
+          sourceRows.flatMap(({ offer }) => [
+            ...(offer.enableGroups ?? []),
+            ...(offer.prices ?? []).flatMap((price) =>
+              price.group ? [price.group] : [],
             ),
+          ]),
         ),
       ).sort(),
-    [accountId, allRows],
+    [sourceRows],
+  )
+
+  const unfilteredRows = useMemo(
+    () =>
+      sourceRows.map(({ model, offer }) => {
+        const key = `${offer.sourceKind}:${offer.accountId}:${model.id}`
+        return {
+          key,
+          id: model.id,
+          displayName:
+            "displayName" in model && typeof model.displayName === "string"
+              ? model.displayName
+              : undefined,
+          vendor:
+            "vendor" in model && typeof model.vendor === "string"
+              ? model.vendor
+              : undefined,
+          description:
+            "description" in model && typeof model.description === "string"
+              ? model.description
+              : undefined,
+          capabilities: getCapabilities(offer),
+          offer,
+          ...selectBestPrice({
+            offer,
+            billingMode,
+            selectedGroups,
+            excludedGroups: excludedGroupsByAccountId[offer.accountId] ?? [],
+            weights,
+            showRealPrice,
+          }),
+          verification: verifications[key],
+        } satisfies ModelOfferRow
+      }),
+    [
+      billingMode,
+      excludedGroupsByAccountId,
+      selectedGroups,
+      showRealPrice,
+      sourceRows,
+      verifications,
+      weights,
+    ],
   )
 
   const baseFilteredRows = useMemo(() => {
-    const query = search.trim().toLowerCase()
-    return allRows.flatMap(({ model, offer }) => {
-      if (accountId && offer.accountId !== accountId) return []
+    const normalizedSearch = search.trim().toLowerCase()
+    return unfilteredRows.filter((row) => {
       if (
-        query &&
-        !`${model.id} ${offer.displayName ?? model.displayName ?? ""} ${offer.vendor ?? model.vendor ?? ""} ${offer.description ?? model.description ?? ""} ${offer.accountName}`
+        normalizedSearch &&
+        !`${row.id} ${row.displayName ?? ""} ${row.offer.displayName ?? ""} ${row.vendor ?? ""} ${row.offer.vendor ?? ""} ${row.description ?? ""} ${row.offer.description ?? ""} ${row.offer.accountName}`
           .toLowerCase()
-          .includes(query)
+          .includes(normalizedSearch)
       ) {
-        return []
+        return false
       }
-
-      const hasKnownPrices = (offer.prices?.length ?? 0) > 0
-      const matchesBilling =
-        billingMode === "all" ||
-        !hasKnownPrices ||
-        offer.prices?.some((price) => price.billingMode === billingMode)
-      if (!matchesBilling) return []
-
-      const matchesGroup =
-        !selectedGroup ||
-        !hasKnownPrices ||
-        offer.prices?.some((price) => price.group === selectedGroup)
-      if (!matchesGroup) return []
-
-      const selected = selectBestPrice(
-        offer,
-        billingMode,
-        selectedGroup,
-        weights,
-        showRealPrice,
-      )
-      return [
-        {
-          id: model.id,
-          displayName: model.displayName,
-          vendor: model.vendor,
-          description: model.description,
-          offer,
-          ...selected,
-        } satisfies ModelOfferRow,
-      ]
+      const prices = row.offer.prices ?? []
+      if (
+        billingMode !== "all" &&
+        prices.length > 0 &&
+        !prices.some((price) => price.billingMode === billingMode)
+      ) {
+        return false
+      }
+      if (
+        selectedGroups.length > 0 &&
+        prices.length > 0 &&
+        !prices.some(
+          (price) => !!price.group && selectedGroups.includes(price.group),
+        )
+      ) {
+        return false
+      }
+      if (
+        selectedCapabilities.length > 0 &&
+        !selectedCapabilities.every((capability) =>
+          row.capabilities.includes(capability),
+        )
+      ) {
+        return false
+      }
+      if (selectedVerificationResults.length > 0) {
+        const status = row.verification?.status ?? "unverified"
+        if (!selectedVerificationResults.includes(status)) return false
+      }
+      return true
     })
   }, [
-    accountId,
-    allRows,
     billingMode,
     search,
-    selectedGroup,
-    showRealPrice,
-    weights,
+    selectedCapabilities,
+    selectedGroups,
+    selectedVerificationResults,
+    unfilteredRows,
   ])
+
+  const capabilityCounts = useMemo(() => {
+    const counts: Partial<Record<ModelCapabilityKey, number>> = {}
+    for (const row of unfilteredRows) {
+      for (const capability of row.capabilities) {
+        counts[capability] = (counts[capability] ?? 0) + 1
+      }
+    }
+    return counts
+  }, [unfilteredRows])
 
   const vendorCatalog = useMemo(() => {
     const counts = new Map<string, number>()
     let unclassifiedCount = 0
     for (const row of baseFilteredRows) {
-      const rowVendor = row.offer.vendor ?? row.vendor
-      if (!rowVendor) {
-        unclassifiedCount += 1
-        continue
-      }
-      counts.set(rowVendor, (counts.get(rowVendor) ?? 0) + 1)
+      const vendor = row.offer.vendor ?? row.vendor
+      if (!vendor) unclassifiedCount += 1
+      else counts.set(vendor, (counts.get(vendor) ?? 0) + 1)
     }
     return {
-      vendors: Array.from(counts, ([name, count]) => ({ name, count })).sort(
-        (left, right) => left.name.localeCompare(right.name),
-      ),
+      providers: Array.from(counts, ([label, count]) => ({
+        key: label,
+        label,
+        count,
+      })).sort((left, right) => left.label.localeCompare(right.label)),
       unclassifiedCount,
     }
   }, [baseFilteredRows])
   const effectiveVendor =
-    vendor === "__unclassified__" && vendorCatalog.unclassifiedCount > 0
-      ? vendor
-      : vendorCatalog.vendors.some((item) => item.name === vendor)
-        ? vendor
+    selectedVendor === "__unclassified__" && vendorCatalog.unclassifiedCount > 0
+      ? selectedVendor
+      : vendorCatalog.providers.some(
+            (provider) => provider.key === selectedVendor,
+          )
+        ? selectedVendor
         : ""
 
   const filteredRows = useMemo(() => {
     const rows = baseFilteredRows.filter((row) => {
-      const rowVendor = row.offer.vendor ?? row.vendor
+      const vendor = row.offer.vendor ?? row.vendor
       return (
         !effectiveVendor ||
         (effectiveVendor === "__unclassified__"
-          ? !rowVendor
-          : rowVendor === effectiveVendor)
+          ? !vendor
+          : vendor === effectiveVendor)
       )
     })
-
     return [...rows].sort((left, right) => {
+      if (sortMode === "verification-latency-asc") {
+        const leftLatency = left.verification?.latencyMs
+        const rightLatency = right.verification?.latencyMs
+        if (leftLatency === undefined) return 1
+        if (rightLatency === undefined) return -1
+        if (leftLatency !== rightLatency) return leftLatency - rightLatency
+      }
       if (sortMode === "price-asc" || sortMode === "price-desc") {
         if (left.priceScore === null) return 1
         if (right.priceScore === null) return -1
@@ -599,94 +439,162 @@ export function AllModelCatalogDialog({
     })
   }, [baseFilteredRows, effectiveVendor, sortMode])
 
-  const comparisonGroups = useMemo(() => {
-    if (sortMode !== "model-cheapest-first") return []
-    const groups = new Map<
-      string,
-      {
-        key: string
-        model: AggregatedModel | undefined
-        billingMode: "token" | "per-call"
-        rows: ModelOfferRow[]
-      }
-    >()
-    for (const row of filteredRows) {
-      const rowBillingMode = row.selectedPrice?.billingMode ?? "token"
-      const key = JSON.stringify([row.id.toLowerCase(), rowBillingMode])
-      const group = groups.get(key) ?? {
-        key,
-        model: catalog?.models.find((model) => model.id === row.id),
-        billingMode: rowBillingMode,
-        rows: [],
-      }
-      group.rows.push(row)
-      groups.set(key, group)
-    }
-
-    return Array.from(groups.values())
-      .map((group) => ({
-        ...group,
-        rows: [...group.rows].sort((left, right) => {
-          if (left.priceScore === null) return 1
-          if (right.priceScore === null) return -1
-          return (
-            left.priceScore - right.priceScore ||
-            left.offer.accountName.localeCompare(right.offer.accountName)
-          )
-        }),
-      }))
-      .sort((left, right) => {
-        const leftBest =
-          left.rows.find((row) => row.priceScore !== null)?.priceScore ??
-          undefined
-        const rightBest =
-          right.rows.find((row) => row.priceScore !== null)?.priceScore ??
-          undefined
-        if (leftBest === undefined) return 1
-        if (rightBest === undefined) return -1
-        return leftBest - rightBest || left.key.localeCompare(right.key)
-      })
-  }, [catalog?.models, filteredRows, sortMode])
-
   const priceComparisonActive =
-    !accountId &&
+    isAllAccounts &&
     sortMode === "model-cheapest-first" &&
     billingMode === "all" &&
-    !selectedGroup &&
+    selectedGroups.length === 0 &&
+    selectedCapabilities.length === 0 &&
+    (selectedVerificationResults.length === 0 ||
+      selectedVerificationResults.length === 3) &&
+    search === "" &&
     showRealPrice
+
   const enablePriceComparison = () => {
-    setAccountId("")
+    setSelectedSourceValue(ALL_ACCOUNTS_SOURCE_VALUE)
+    setActiveAccountIds([])
+    setExcludedGroupsByAccountId({})
+    setSearch("")
     setSortMode("model-cheapest-first")
     setBillingMode("all")
-    setSelectedGroup("")
+    setSelectedGroups([])
+    setSelectedCapabilities([])
+    setSelectedVerificationResults(["pass", "fail", "unverified"])
+    setSelectedVendor("")
     setShowRealPrice(true)
   }
 
-  const headerActions = (
-    <>
-      {hasPricing && !priceComparisonActive ? (
-        <button
-          type="button"
-          title="清空价格筛选，切换到所有账号，并按同模型最低价优先排序。"
-          onClick={enablePriceComparison}
-          className="flex h-9 items-center gap-2 rounded-md border border-gray-300 bg-white px-3 text-sm font-medium text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200 dark:hover:bg-gray-800"
-        >
-          <TrendingDown className="size-4" />
-          一键比价
-        </button>
-      ) : null}
-      <button
+  const handlePresetIdChange = (nextPresetId: ModelPriceComparisonPresetId) => {
+    setPresetId(nextPresetId)
+    if (nextPresetId !== MODEL_PRICE_COMPARISON_PRESET_IDS.CUSTOM) {
+      setWeights({ ...MODEL_PRICE_COMPARISON_PRESETS[nextPresetId].weights })
+    }
+  }
+
+  const handleAccountSummaryClick = (accountId: string) => {
+    setActiveAccountIds((current) =>
+      current.includes(accountId)
+        ? current.filter((id) => id !== accountId)
+        : [...current, accountId],
+    )
+  }
+
+  const handleVerify = async (row: ModelOfferRow) => {
+    if (!selectedProfile || !onVerifyProfile) return
+    setVerifyingKeys((current) => [...current, row.key])
+    try {
+      const response = await onVerifyProfile(selectedProfile, row.id)
+      const relevantResults = response.report.results
+      const failure = relevantResults.find((result) => result.status === "fail")
+      const passed = relevantResults.some((result) => result.status === "pass")
+      const status = failure || !passed ? "fail" : "pass"
+      const representative = failure ?? relevantResults[0]
+      setVerifications((current) => ({
+        ...current,
+        [row.key]: {
+          status,
+          latencyMs: Math.max(
+            0,
+            ...relevantResults.map((result) => result.latencyMs),
+          ),
+          summary:
+            representative?.summary ??
+            (status === "pass" ? "接口响应正常" : "接口验证失败"),
+        },
+      }))
+    } catch (error) {
+      setVerifications((current) => ({
+        ...current,
+        [row.key]: {
+          status: "fail",
+          latencyMs: 0,
+          summary: getErrorMessage(error),
+        },
+      }))
+    } finally {
+      setVerifyingKeys((current) => current.filter((key) => key !== row.key))
+    }
+  }
+
+  const handleBatchVerify = async () => {
+    for (const row of filteredRows) {
+      await handleVerify(row)
+    }
+  }
+
+  const handleRefresh = async () => {
+    if (selectedProfile) await loadProfileCatalog(selectedProfile)
+    else await onRefresh()
+  }
+
+  const pageBusy =
+    busy ||
+    (selectedProfile &&
+      profileCatalogState?.profileId === selectedProfile.id &&
+      profileCatalogState.status === "loading")
+  const hasSources = (catalog?.accounts.length ?? 0) + profiles.length > 0
+  const selectedSourceStatus = selectedAccount?.status
+  const sourceError =
+    selectedProfile && profileCatalogState?.profileId === selectedProfile.id
+      ? profileCatalogState.status === "error"
+        ? profileCatalogState.error
+        : profileCatalogState.status === "success" &&
+            !profileCatalogState.catalog?.supported
+          ? "该 API 凭据类型暂不支持模型发现。"
+          : undefined
+      : selectedSourceStatus === "error"
+        ? selectedAccount?.error ?? "加载模型数据失败，请稍后重试。"
+        : selectedSourceStatus === "unsupported"
+          ? "该站点类型暂未适配模型列表。"
+          : selectedSourceStatus === "skipped"
+            ? "该账号已停用，未加载模型数据。"
+            : undefined
+
+  const shouldShowRefreshAction =
+    Boolean(selectedSourceValue) && sourceRows.length > 0
+  const shouldShowPriceComparisonAction =
+    supportsPricing && !priceComparisonActive
+  const shouldShowHeaderActions =
+    shouldShowRefreshAction || shouldShowPriceComparisonAction
+  const accountForKeyAction = selectedAccount ?? catalog?.accounts[0]
+  const titleActions =
+    accountForKeyAction && onOpenAccountKeys ? (
+      <IconButton
         type="button"
-        disabled={busy}
-        onClick={() => void onRefresh()}
-        title="刷新数据"
-        className="flex h-9 items-center gap-2 rounded-md bg-blue-600 px-3 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-60"
+        title="管理账号密钥"
+        aria-label="管理账号密钥"
+        onClick={() => onOpenAccountKeys(accountForKeyAction.accountId)}
+        size="sm"
+        variant="outline"
       >
-        <RefreshCw className={`size-4 ${busy ? "animate-spin" : ""}`} />
-        {busy ? "加载中..." : "刷新数据"}
-      </button>
+        <KeyRound className="size-4" />
+      </IconButton>
+    ) : undefined
+  const headerActions = shouldShowHeaderActions ? (
+    <>
+      {shouldShowRefreshAction ? (
+        <Button
+          onClick={() => void handleRefresh()}
+          variant="secondary"
+          leftIcon={<RefreshCw className="size-4" />}
+          loading={pageBusy}
+        >
+          {pageBusy ? "刷新中..." : "刷新数据"}
+        </Button>
+      ) : null}
+      {shouldShowPriceComparisonAction ? (
+        <Button
+          type="button"
+          title="清空当前筛选，切换到所有账号，并按同模型最低价优先排序。"
+          onClick={enablePriceComparison}
+          variant="default"
+          leftIcon={<TrendingDown className="size-4" />}
+        >
+          一键比价
+        </Button>
+      ) : null}
     </>
-  )
+  ) : undefined
 
   return (
     <WebDialog
@@ -694,432 +602,190 @@ export function AllModelCatalogDialog({
       onClose={onClose}
       title="模型列表"
       description="查看和管理可用的AI模型"
+      titleActions={titleActions}
       inlineActions={headerActions}
       footer={headerActions}
+      size="wide"
     >
-      <section className="mb-6" aria-labelledby="model-source-heading">
-        <h2
-          id="model-source-heading"
-          className="mb-3 text-base font-semibold text-gray-900 dark:text-white"
-        >
-          选择数据源
-        </h2>
-        <select
-          value={accountId}
-          onChange={(event) => setAccountId(event.target.value)}
-          aria-label="选择数据源"
-          className="h-9 w-full rounded-md border border-gray-300 bg-white px-3 text-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/25 dark:border-gray-700 dark:bg-gray-950"
-        >
-          <option value="">所有账号</option>
-          {(catalog?.accounts ?? []).map((account) => (
-            <option key={account.accountId} value={account.accountId}>
-              {account.accountName} · {statusLabels[account.status]}
-            </option>
-          ))}
-        </select>
-      </section>
+      <ModelSourceSection
+        value={selectedSourceValue}
+        accounts={catalog?.accounts ?? []}
+        profiles={profiles}
+        activeAccountIds={activeAccountIds}
+        excludedGroupsByAccountId={excludedGroupsByAccountId}
+        onChange={handleSourceChange}
+        onAccountSummaryClick={handleAccountSummaryClick}
+        onExcludedGroupsChange={setExcludedGroupsByAccountId}
+      />
 
-      {!accountId && catalog && catalog.accounts.length > 0 ? (
-        <section
-          aria-label="账号概览"
-          className="mb-6 border-y border-gray-200 py-3 dark:border-gray-700"
-        >
-          <div className="mb-2 flex items-center justify-between gap-3">
-            <h2 className="text-sm font-semibold text-gray-900 dark:text-white">
-              账号概览
-            </h2>
-            <span className="text-xs text-gray-500">
-              成功 {catalog.summary.succeeded} · 失败 {catalog.summary.failed}
-            </span>
-          </div>
-          <div className="flex gap-2 overflow-x-auto pb-1">
-            {catalog.accounts.map((account) => (
-              <button
-                key={account.accountId}
-                type="button"
-                onClick={() => setAccountId(account.accountId)}
-                className="flex min-w-36 shrink-0 items-center justify-between gap-3 rounded-md border border-gray-200 bg-white px-3 py-2 text-left text-xs hover:border-blue-300 dark:border-gray-700 dark:bg-gray-900 dark:hover:border-blue-700"
-              >
-                <span className="min-w-0 truncate font-medium text-gray-700 dark:text-gray-200">
-                  {account.accountName}
-                </span>
-                <span
-                  className={
-                    account.status === "success"
-                      ? "text-emerald-600 dark:text-emerald-400"
-                      : account.status === "error"
-                        ? "text-red-600 dark:text-red-400"
-                        : "text-gray-500"
-                  }
-                >
-                  {account.status === "success"
-                    ? `${account.models.length} 个`
-                    : statusLabels[account.status]}
-                </span>
-              </button>
-            ))}
-          </div>
-        </section>
-      ) : null}
-
-      <section
-        aria-label="模型筛选"
-        className="mb-6 rounded-md border border-gray-200 bg-white p-4 shadow-sm dark:border-gray-700 dark:bg-gray-900"
-      >
-        <div className="grid gap-3 border-b border-gray-100 pb-4 sm:grid-cols-[minmax(0,1fr)_minmax(12rem,0.42fr)_auto] sm:items-end dark:border-gray-800">
-          <label className="block min-w-0 text-sm font-medium text-gray-700 dark:text-gray-200">
-            搜索模型
-            <span className="relative mt-2 block">
-              <Search className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-gray-400" />
-              <input
-                value={search}
-                onChange={(event) => setSearch(event.target.value)}
-                placeholder="输入模型名称或描述..."
-                className="h-9 w-full rounded-md border border-gray-300 bg-white pr-3 pl-9 text-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/25 dark:border-gray-700 dark:bg-gray-950"
-              />
-            </span>
-          </label>
-          <label className="block text-sm font-medium text-gray-700 dark:text-gray-200">
-            排序方式
-            <select
-              value={sortMode}
-              onChange={(event) => setSortMode(event.target.value as SortMode)}
-              aria-label="排序方式"
-              className="mt-2 h-9 w-full rounded-md border border-gray-300 bg-white px-3 text-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/25 dark:border-gray-700 dark:bg-gray-950"
-            >
-              <option value="default">默认顺序</option>
-              {hasPricing ? (
-                <>
-                  <option value="price-asc">价格从低到高</option>
-                  <option value="price-desc">价格从高到低</option>
-                  <option value="model-cheapest-first">同模型最低价优先</option>
-                </>
-              ) : null}
-            </select>
-          </label>
-          <div className="flex h-9 items-center justify-end gap-3 text-xs text-gray-600 dark:text-gray-300">
-            <span className="flex items-center gap-1.5">
-              <Cpu className="size-4" />
-              总计 {allRows.length} 个模型
-            </span>
-            <span className="h-3 w-px bg-gray-300 dark:bg-gray-700" />
-            <span className="font-medium text-blue-600 dark:text-blue-400">
-              显示 {filteredRows.length} 个模型
-            </span>
-          </div>
+      {!hasSources && !pageBusy ? (
+        <EmptyState
+          title="暂无可用数据源"
+          description="请先添加站点账号或 API 凭据，然后查看模型列表。"
+        />
+      ) : !selectedSourceValue ? (
+        <EmptyState
+          title="请选择数据源"
+          description="请先在上方选择一个数据源，然后查看模型列表。"
+        />
+      ) : pageBusy && sourceRows.length === 0 ? (
+        <div className="flex min-h-56 flex-col items-center justify-center text-center">
+          <LoaderCircle className="size-10 animate-spin text-blue-600" />
+          <p className="mt-3 text-sm text-gray-600 dark:text-gray-300">
+            正在加载模型数据...
+          </p>
         </div>
-
-        <div className="border-b border-gray-100 py-4 dark:border-gray-800">
-          <h3 className="mb-3 text-sm font-semibold text-gray-900 dark:text-white">
-            筛选条件
-          </h3>
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-            <label className="block text-sm font-medium text-gray-700 dark:text-gray-200">
-              计费方式
-              <select
-                value={billingMode}
-                onChange={(event) =>
-                  setBillingMode(event.target.value as BillingMode)
-                }
-                aria-label="计费方式"
-                className="mt-2 h-9 w-full rounded-md border border-gray-300 bg-white px-3 text-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/25 dark:border-gray-700 dark:bg-gray-950"
-              >
-                <option value="all">所有计费方式</option>
-                <option value="token">按量计费</option>
-                <option value="per-call">按次计费</option>
-              </select>
-            </label>
-            <label className="block text-sm font-medium text-gray-700 dark:text-gray-200">
-              用户分组
-              <select
-                value={selectedGroup}
-                onChange={(event) => setSelectedGroup(event.target.value)}
-                aria-label="用户分组"
-                className="mt-2 h-9 w-full rounded-md border border-gray-300 bg-white px-3 text-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/25 dark:border-gray-700 dark:bg-gray-950"
-              >
-                <option value="">所有分组</option>
-                {availableGroups.map((group) => (
-                  <option key={group} value={group}>
-                    {group}
-                  </option>
-                ))}
-              </select>
-            </label>
-            {sortMode !== "default" ? (
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-200">
-                使用场景
-                <select
-                  value={presetId}
-                  onChange={(event) =>
-                    setPresetId(event.target.value as PriceComparisonPresetId)
-                  }
-                  aria-label="价格比较使用场景"
-                  className="mt-2 h-9 w-full rounded-md border border-gray-300 bg-white px-3 text-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/25 dark:border-gray-700 dark:bg-gray-950"
-                >
-                  {presetOptions.map((option) => (
-                    <option key={option.value} value={option.value}>
-                      {option.label}
-                    </option>
-                  ))}
-                </select>
-              </label>
-            ) : null}
-          </div>
-          {sortMode !== "default" ? (
-            <div className="mt-4 rounded-md bg-gray-50 p-3 dark:bg-gray-950/60">
-              <div className="flex items-start gap-2">
-                <Info className="mt-0.5 size-4 shrink-0 text-gray-500" />
-                <div>
-                  <h4 className="text-sm font-medium text-gray-800 dark:text-gray-100">
-                    价格比较条件
-                  </h4>
-                  <p className="mt-1 text-xs leading-5 text-gray-500 dark:text-gray-400">
-                    当前按“
-                    {
-                      presetOptions.find((item) => item.value === presetId)
-                        ?.label
-                    }
-                    ”用量占比计算。同一模型会优先展示当前条件下价格最低的账号和分组，实际费用以站点账单为准。
-                  </p>
-                </div>
-              </div>
-            </div>
-          ) : null}
-        </div>
-
-        <div className="flex flex-wrap items-center justify-between gap-3 pt-4">
-          <fieldset className="flex flex-wrap items-center gap-4 text-sm">
-            <legend className="sr-only">显示选项</legend>
-            <label className="flex cursor-pointer items-center gap-2">
-              <input
-                type="checkbox"
-                checked={showRealPrice}
-                onChange={(event) => setShowRealPrice(event.target.checked)}
-                className="size-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-              />
-              真实充值金额
-            </label>
-            <label className="flex cursor-pointer items-center gap-2">
-              <input
-                type="checkbox"
-                checked={showEndpointTypes}
-                onChange={(event) => setShowEndpointTypes(event.target.checked)}
-                className="size-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-              />
-              端点类型
-            </label>
-          </fieldset>
-          <div className="flex flex-wrap items-center gap-2">
-            <button
-              type="button"
-              onClick={() =>
-                void navigator.clipboard?.writeText(
-                  Array.from(new Set(filteredRows.map((row) => row.id))).join(
-                    "\n",
-                  ),
-                )
-              }
-              className="flex h-8 items-center gap-2 rounded-md px-2.5 text-sm text-gray-600 hover:bg-gray-100 hover:text-gray-900 dark:text-gray-300 dark:hover:bg-gray-800 dark:hover:text-white"
-            >
-              <Copy className="size-4" />
-              复制所有模型名称
-            </button>
-            {hasPricing && !priceComparisonActive ? (
-              <button
-                type="button"
-                onClick={enablePriceComparison}
-                className="flex h-8 items-center gap-2 rounded-md border border-gray-300 px-2.5 text-sm font-medium text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800"
-              >
-                <TrendingDown className="size-4" />
-                一键比价
-              </button>
-            ) : null}
-          </div>
-        </div>
-      </section>
-
-      <div className="mb-6 flex items-center gap-2">
-        <button
-          type="button"
-          title="向左滚动厂商标签"
-          aria-label="向左滚动厂商标签"
-          onClick={() =>
-            providerTabsRef.current?.scrollBy({
-              left: -240,
-              behavior: "smooth",
-            })
+      ) : sourceError ? (
+        <StatusNotice
+          title={
+            selectedSourceStatus === "unsupported"
+              ? "该站点类型暂未适配模型列表"
+              : "加载模型数据失败"
           }
-          className="flex size-8 shrink-0 items-center justify-center rounded-md text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-800"
-        >
-          <ChevronLeft className="size-4" />
-        </button>
-        <div
-          ref={providerTabsRef}
-          role="tablist"
-          aria-label="模型厂商"
-          className="flex min-w-0 flex-1 gap-1 overflow-x-auto rounded-md bg-gray-100 p-1 dark:bg-gray-800"
-        >
-          <button
-            type="button"
-            role="tab"
-            aria-selected={!effectiveVendor}
-            onClick={() => setVendor("")}
-            className={`flex shrink-0 items-center gap-2 rounded-md px-3 py-2 text-sm font-medium transition-colors ${!effectiveVendor ? "bg-white text-blue-700 shadow-sm dark:bg-gray-900 dark:text-blue-400" : "text-gray-600 hover:bg-white/70 dark:text-gray-300 dark:hover:bg-gray-900/70"}`}
-          >
-            <LayoutGrid className="size-4" />
-            所有厂商 ({baseFilteredRows.length})
-          </button>
-          {vendorCatalog.vendors.map((item) => (
-            <button
-              key={item.name}
-              type="button"
-              role="tab"
-              aria-selected={effectiveVendor === item.name}
-              onClick={() => setVendor(item.name)}
-              className={`shrink-0 rounded-md px-3 py-2 text-sm font-medium transition-colors ${effectiveVendor === item.name ? "bg-white text-blue-700 shadow-sm dark:bg-gray-900 dark:text-blue-400" : "text-gray-600 hover:bg-white/70 dark:text-gray-300 dark:hover:bg-gray-900/70"}`}
-            >
-              {item.name} ({item.count})
-            </button>
-          ))}
-          {vendorCatalog.unclassifiedCount > 0 ? (
-            <button
-              type="button"
-              role="tab"
-              aria-selected={effectiveVendor === "__unclassified__"}
-              onClick={() => setVendor("__unclassified__")}
-              className={`shrink-0 rounded-md px-3 py-2 text-sm font-medium transition-colors ${effectiveVendor === "__unclassified__" ? "bg-white text-blue-700 shadow-sm dark:bg-gray-900 dark:text-blue-400" : "text-gray-600 hover:bg-white/70 dark:text-gray-300 dark:hover:bg-gray-900/70"}`}
-            >
-              未分类 ({vendorCatalog.unclassifiedCount})
-            </button>
-          ) : null}
-        </div>
-        <button
-          type="button"
-          title="向右滚动厂商标签"
-          aria-label="向右滚动厂商标签"
-          onClick={() =>
-            providerTabsRef.current?.scrollBy({
-              left: 240,
-              behavior: "smooth",
-            })
-          }
-          className="flex size-8 shrink-0 items-center justify-center rounded-md text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-800"
-        >
-          <ChevronRight className="size-4" />
-        </button>
-      </div>
-
-      {catalog?.accounts.some((account) => account.status === "error") ? (
-        <div className="mb-4 space-y-1 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800 dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-200">
-          {catalog.accounts
-            .filter((account) => account.status === "error")
-            .map((account) => (
-              <div key={account.accountId}>
-                {account.accountName}: {account.error || "模型目录加载失败"}
-              </div>
-            ))}
-        </div>
-      ) : null}
-
-      {filteredRows.length === 0 ? (
-        <div className="py-12 text-center">
-          <Cpu className="mx-auto size-12 text-gray-300 dark:text-gray-700" />
-          <p className="mt-3 text-sm text-gray-500">暂无匹配模型</p>
-        </div>
-      ) : sortMode === "model-cheapest-first" ? (
-        <div className="max-h-[70vh] space-y-3 overflow-y-auto pr-1">
-          {comparisonGroups.map((group) => {
-            const comparableRows = group.rows.filter(
-              (row) => row.priceScore !== null,
-            )
-            const notComparedRows = group.rows.filter(
-              (row) => row.priceScore === null,
-            )
-            const lowestScore = comparableRows[0]?.priceScore
-            return (
-              <section
-                key={group.key}
-                className="overflow-hidden rounded-md border border-gray-200 bg-white shadow-sm dark:border-gray-700 dark:bg-gray-900"
-              >
-                <header className="flex flex-wrap items-center justify-between gap-2 border-b border-gray-200 bg-gray-50 px-3 py-2.5 sm:px-4 dark:border-gray-700 dark:bg-gray-950/50">
-                  <div className="flex min-w-0 flex-wrap items-center gap-2">
-                    <h2 className="min-w-0 font-mono text-sm font-semibold break-all text-gray-900 dark:text-white">
-                      {group.model?.displayName ?? group.rows[0]?.id}
-                    </h2>
-                    <span className="rounded-md bg-gray-200 px-2 py-0.5 text-xs text-gray-600 dark:bg-gray-800 dark:text-gray-300">
-                      {group.billingMode === "token" ? "按量计费" : "按次计费"}
-                    </span>
-                  </div>
-                  <div className="flex flex-wrap items-center gap-1.5 text-xs">
-                    <span className="rounded-full border border-gray-200 bg-white px-2.5 py-1 text-gray-600 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300">
-                      可比较报价:{" "}
-                      <strong className="text-emerald-700 dark:text-emerald-400">
-                        {comparableRows.length}
-                      </strong>
-                    </span>
-                    {notComparedRows.length > 0 ? (
-                      <span className="rounded-full border border-gray-200 bg-white px-2.5 py-1 text-gray-600 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300">
-                        未参与当前条件比较: {notComparedRows.length}
-                      </span>
-                    ) : null}
-                  </div>
-                </header>
-                <div className="divide-y divide-gray-200 dark:divide-gray-700">
-                  {comparableRows.map((row) => (
-                    <ModelOfferCard
-                      key={`${row.offer.accountId}:${row.id}`}
-                      row={row}
-                      showRealPrice={showRealPrice}
-                      showEndpointTypes={showEndpointTypes}
-                      isLowestPrice={row.priceScore === lowestScore}
-                      comparisonOffer
-                    />
-                  ))}
-                  {notComparedRows.length > 0 ? (
-                    <div className="bg-gray-50/70 dark:bg-gray-950/30">
-                      <div className="flex gap-2 border-b border-dashed border-gray-300 px-3 py-2.5 text-xs text-gray-500 sm:px-4 dark:border-gray-700 dark:text-gray-400">
-                        <Info className="mt-0.5 size-4 shrink-0" />
-                        <span>
-                          当前比较条件使用了价格来源未提供的价格项，因此以下报价未参与比较。
-                        </span>
-                      </div>
-                      <div className="divide-y divide-gray-200 dark:divide-gray-700">
-                        {notComparedRows.map((row) => (
-                          <ModelOfferCard
-                            key={`${row.offer.accountId}:${row.id}`}
-                            row={row}
-                            showRealPrice={showRealPrice}
-                            showEndpointTypes={showEndpointTypes}
-                            comparisonOffer
-                          />
-                        ))}
-                      </div>
-                    </div>
-                  ) : null}
-                </div>
-              </section>
-            )
-          })}
-        </div>
+          description={sourceError}
+          onRetry={() => void handleRefresh()}
+        />
+      ) : sourceRows.length === 0 ? (
+        <EmptyState
+          title="没有可显示的模型"
+          description="当前来源没有返回模型数据，请刷新后重试。"
+        />
       ) : (
-        <div className="grid max-h-[70vh] gap-3 overflow-y-auto pr-1">
-          {filteredRows.map((row) => (
-            <ModelOfferCard
-              key={`${row.offer.accountId}:${row.id}`}
-              row={row}
+        <>
+          <ModelControlPanel
+            search={search}
+            sortMode={sortMode}
+            billingMode={billingMode}
+            selectedGroups={selectedGroups}
+            availableGroups={availableGroups}
+            selectedCapabilities={selectedCapabilities}
+            capabilityCounts={capabilityCounts}
+            selectedVerificationResults={selectedVerificationResults}
+            isAllAccountsSource={isAllAccounts}
+            isProfileSource={Boolean(selectedProfile)}
+            supportsCapabilityFilter={unfilteredRows.some(
+              (row) => row.capabilities.length > 0,
+            )}
+            showRealPrice={showRealPrice}
+            showEndpointTypes={showEndpointTypes}
+            supportsPricing={supportsPricing}
+            supportsVerification={supportsVerification}
+            totalCount={unfilteredRows.length}
+            filteredCount={filteredRows.length}
+            presetId={presetId}
+            weights={weights}
+            priceComparisonActive={priceComparisonActive}
+            onSearchChange={setSearch}
+            onSortModeChange={setSortMode}
+            onBillingModeChange={setBillingMode}
+            onSelectedGroupsChange={setSelectedGroups}
+            onSelectedCapabilitiesChange={setSelectedCapabilities}
+            onSelectedVerificationResultsChange={setSelectedVerificationResults}
+            onShowRealPriceChange={setShowRealPrice}
+            onShowEndpointTypesChange={setShowEndpointTypes}
+            onPresetIdChange={handlePresetIdChange}
+            onWeightsChange={setWeights}
+            onCopyAllNames={() =>
+              void navigator.clipboard?.writeText(
+                Array.from(new Set(filteredRows.map((row) => row.id))).join(
+                  "\n",
+                ),
+              )
+            }
+            onBatchVerify={
+              supportsVerification ? () => void handleBatchVerify() : undefined
+            }
+            onEnablePriceComparison={enablePriceComparison}
+          />
+
+          <ProviderTabs
+            providers={vendorCatalog.providers}
+            value={effectiveVendor}
+            totalCount={baseFilteredRows.length}
+            unclassifiedCount={vendorCatalog.unclassifiedCount}
+            onChange={setSelectedVendor}
+          >
+            <ModelDisplay
+              rows={filteredRows}
               showRealPrice={showRealPrice}
               showEndpointTypes={showEndpointTypes}
+              showPriceComparisonGroups={sortMode === "model-cheapest-first"}
+              verifyingKeys={verifyingKeys}
+              onFilterAccount={
+                isAllAccounts
+                  ? (accountId) => setActiveAccountIds([accountId])
+                  : undefined
+              }
+              onOpenAccountKeys={onOpenAccountKeys}
+              onVerify={supportsVerification ? handleVerify : undefined}
             />
-          ))}
-        </div>
-      )}
+          </ProviderTabs>
 
-      {hasPricing ? (
-        <p className="mt-6 border-t border-gray-200 pt-4 text-xs leading-5 text-gray-500 dark:border-gray-700 dark:text-gray-400">
-          模型价格来自各站点提供的接口。按量计费显示每 1M tokens
-          的费用，真实费用及可用范围请以站点账单和实际调用结果为准。
+          {supportsPricing ? (
+            <footer className="mt-8 flex gap-2 rounded-md border border-blue-200 bg-blue-50 p-4 text-blue-900 dark:border-blue-900 dark:bg-blue-950/40 dark:text-blue-100">
+              <Info className="mt-0.5 size-4 shrink-0" />
+              <div>
+                <h4 className="mb-1 font-medium">模型定价说明</h4>
+                <p className="text-sm leading-6">
+                  价格信息来源于站点提供的 API
+                  接口，实际费用以各站点公布的价格为准。按量计费模型的价格为每
+                  1M tokens 的费用，按次计费模型显示每次调用的费用
+                </p>
+              </div>
+            </footer>
+          ) : null}
+        </>
+      )}
+    </WebDialog>
+  )
+}
+
+function EmptyState({
+  title,
+  description,
+}: {
+  title: string
+  description?: string
+}) {
+  return (
+    <div className="flex min-h-60 flex-col items-center justify-center rounded-lg border border-dashed border-gray-300 p-8 text-center dark:border-gray-700">
+      <Cpu className="size-12 text-gray-300 dark:text-gray-600" />
+      <h2 className="mt-4 text-base font-semibold">{title}</h2>
+      {description ? (
+        <p className="mt-2 max-w-lg text-sm leading-6 text-gray-500 dark:text-gray-400">
+          {description}
         </p>
       ) : null}
-    </WebDialog>
+    </div>
+  )
+}
+
+function StatusNotice({
+  title,
+  description,
+  onRetry,
+}: {
+  title: string
+  description: string
+  onRetry: () => void
+}) {
+  return (
+    <div className="flex min-h-60 flex-col items-center justify-center rounded-lg border border-red-200 bg-red-50/60 p-8 text-center dark:border-red-900 dark:bg-red-950/20">
+      <Info className="size-10 text-red-500" />
+      <h2 className="mt-4 text-base font-semibold text-red-900 dark:text-red-100">
+        {title}
+      </h2>
+      <p className="mt-2 max-w-lg text-sm leading-6 text-red-700 dark:text-red-300">
+        {description}
+      </p>
+      <button
+        type="button"
+        onClick={onRetry}
+        className="mt-4 inline-flex h-9 items-center gap-2 rounded-md bg-red-600 px-3 text-sm font-medium text-white hover:bg-red-700"
+      >
+        <RefreshCw className="size-4" />
+        重新尝试加载
+      </button>
+    </div>
   )
 }

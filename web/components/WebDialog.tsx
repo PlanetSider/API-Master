@@ -4,6 +4,7 @@ import {
   Bookmark,
   Boxes,
   ChartNoAxesCombined,
+  Cpu,
   History,
   KeyRound,
   Palette,
@@ -47,8 +48,10 @@ interface WebDialogProps {
   title: string
   description?: string
   children: ReactNode
+  titleActions?: ReactNode
   inlineActions?: ReactNode
   footer?: ReactNode
+  size?: "default" | "wide"
   onClose: () => void
 }
 
@@ -57,7 +60,7 @@ const inlineTitleIcons: Record<string, LucideIcon> = {
   用量分析: ChartNoAxesCombined,
   网站公告: Bell,
   余额历史: History,
-  模型列表: Boxes,
+  模型列表: Cpu,
   模型总览: Boxes,
   自动刷新: TimerReset,
   自动签到: TimerReset,
@@ -73,16 +76,31 @@ const inlineTitleIcons: Record<string, LucideIcon> = {
   托管站点: ServerCog,
   渠道管理: ServerCog,
   模型同步: RefreshCw,
+  模型列表同步执行: RefreshCw,
   通知中心: Bell,
 }
+
+const inlineSettingsTitles = new Set([
+  "账户管理",
+  "余额历史",
+  "用量分析",
+  "网站公告",
+  "自动签到",
+  "密钥管理",
+  "渠道管理",
+  "模型同步",
+  "模型列表同步执行",
+])
 
 export function WebDialog({
   open,
   title,
   description,
   children,
+  titleActions,
   inlineActions,
   footer,
+  size = "default",
   onClose,
 }: WebDialogProps) {
   const inline = useContext(WebDialogInlineContext)
@@ -113,6 +131,21 @@ export function WebDialog({
 
   if (inline) {
     const Icon = inlineTitleIcons[title] ?? Settings2
+    const resolvedTitleActions =
+      titleActions ??
+      (inlineSettingsTitles.has(title) ? (
+        <button
+          type="button"
+          aria-label={`${title}设置`}
+          title={`${title}设置`}
+          onClick={() => {
+            window.location.hash = "#basic"
+          }}
+          className="flex size-8 shrink-0 items-center justify-center rounded-md border border-gray-200 text-gray-500 hover:bg-gray-50 hover:text-gray-900 dark:border-gray-700 dark:hover:bg-gray-800 dark:hover:text-white"
+        >
+          <Settings2 className="size-4" />
+        </button>
+      ) : null)
     return (
       <div
         ref={panelRef}
@@ -122,18 +155,21 @@ export function WebDialog({
         className="w-full outline-none"
       >
         <div className="[container-type:inline-size] mb-8">
-          <div className="flex flex-col gap-3 [@container(min-width:42rem)]:flex-row [@container(min-width:42rem)]:items-start [@container(min-width:42rem)]:justify-between [@container(min-width:42rem)]:gap-4">
+          <div className="flex flex-col gap-2 [@container(min-width:42rem)]:flex-row [@container(min-width:42rem)]:items-start [@container(min-width:42rem)]:justify-between [@container(min-width:42rem)]:gap-4">
             <div className="flex min-w-0 items-center gap-3">
               <Icon className="size-6 shrink-0 text-blue-600 dark:text-blue-400" />
-              <h1
-                id={titleId}
-                className="min-w-0 text-2xl font-semibold tracking-tight text-gray-900 dark:text-white"
-              >
-                {title}
-              </h1>
+              <div className="flex min-w-0 items-center gap-2">
+                <h1
+                  id={titleId}
+                  className="min-w-0 text-2xl font-semibold tracking-tight text-gray-900 dark:text-white"
+                >
+                  {title}
+                </h1>
+                {resolvedTitleActions}
+              </div>
             </div>
             {inlineActions ? (
-              <div className="flex w-full min-w-0 flex-wrap items-center gap-2 [@container(min-width:42rem)]:w-auto [@container(min-width:42rem)]:justify-end">
+              <div className="flex w-full min-w-0 flex-wrap items-center gap-3 [@container(min-width:42rem)]:w-auto [@container(min-width:42rem)]:flex-1 [@container(min-width:42rem)]:justify-end">
                 {inlineActions}
               </div>
             ) : null}
@@ -171,13 +207,18 @@ export function WebDialog({
         aria-labelledby={titleId}
         aria-describedby={description ? descriptionId : undefined}
         tabIndex={-1}
-        className="max-h-[calc(100vh-2rem)] w-full max-w-xl overflow-y-auto rounded-md border border-gray-200 bg-white shadow-xl outline-none dark:border-gray-700 dark:bg-gray-900"
+        className={`max-h-[calc(100vh-2rem)] w-full overflow-y-auto rounded-md border border-gray-200 bg-white shadow-xl outline-none dark:border-gray-700 dark:bg-gray-900 ${
+          size === "wide" ? "max-w-7xl" : "max-w-xl"
+        }`}
       >
         <div className="flex items-start justify-between gap-4 border-b border-gray-200 px-5 py-4 dark:border-gray-700">
           <div className="min-w-0">
-            <h2 id={titleId} className="text-base font-semibold">
-              {title}
-            </h2>
+            <div className="flex min-w-0 items-center gap-2">
+              <h2 id={titleId} className="text-base font-semibold">
+                {title}
+              </h2>
+              {titleActions}
+            </div>
             {description ? (
               <p
                 id={descriptionId}
