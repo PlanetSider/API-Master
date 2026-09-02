@@ -338,7 +338,9 @@ export function BalanceHistoryDialog({
         <section className="rounded-lg border border-gray-200 p-5 dark:border-gray-700">
           <div className="mb-2 text-sm font-semibold">账户分布：余额</div>
           {breakdownRows.length > 0 ? (
-            <EChart option={breakdownOption} className="h-72" />
+            <div className="h-72 w-full">
+              <EChart option={breakdownOption} />
+            </div>
           ) : (
             <div className="flex h-72 items-center justify-center text-sm text-gray-500">
               该分布暂无可展示的数据。
@@ -348,7 +350,9 @@ export function BalanceHistoryDialog({
         <section className="rounded-lg border border-gray-200 p-5 dark:border-gray-700">
           <div className="mb-2 text-sm font-semibold">趋势：余额</div>
           {filteredEntries.length > 0 ? (
-            <EChart option={trendOption} className="h-72" />
+            <div className="h-72 w-full">
+              <EChart option={trendOption} />
+            </div>
           ) : (
             <div className="flex h-72 items-center justify-center text-sm text-gray-500">
               暂无趋势数据
