@@ -203,14 +203,14 @@ export function BalanceHistoryDialog({
         </>
       }
     >
-      <section className="rounded-lg border border-gray-200 p-5 dark:border-gray-700">
+      <section className="rounded-lg border border-gray-200 p-4 sm:p-6 dark:border-gray-700">
         <div>
           <div className="text-sm font-medium">标签</div>
           <p className="mt-1 text-xs text-gray-500">按标签过滤账户。</p>
           <div className="mt-2 flex flex-wrap gap-2">
             <button
               type="button"
-              className="rounded-full bg-emerald-500 px-3 py-1 text-xs font-medium text-white"
+              className="rounded-full bg-emerald-500 px-3 py-1 text-xs font-medium text-white shadow-xs sm:text-[13px]"
             >
               全部标签
             </button>
@@ -223,7 +223,7 @@ export function BalanceHistoryDialog({
             <button
               type="button"
               onClick={() => setSelectedAccountIds([])}
-              className={`rounded-full px-3 py-1 text-xs font-medium ${selectedAccountIds.length === 0 ? "bg-emerald-500 text-white" : "border border-gray-200"}`}
+              className={`rounded-full px-3 py-1 text-xs font-medium shadow-xs sm:text-[13px] ${selectedAccountIds.length === 0 ? "bg-emerald-500 text-white" : "border border-gray-200"}`}
             >
               全部账户
             </button>
@@ -240,7 +240,7 @@ export function BalanceHistoryDialog({
                         : [...current, account.id],
                     )
                   }
-                  className={`rounded-full px-3 py-1 text-xs font-medium ${selected ? "bg-emerald-500 text-white" : "border border-gray-200"}`}
+                  className={`rounded-full px-3 py-1 text-xs font-medium shadow-xs sm:text-[13px] ${selected ? "bg-emerald-500 text-white" : "border border-gray-200"}`}
                 >
                   {account.name}
                 </button>
@@ -268,7 +268,7 @@ export function BalanceHistoryDialog({
             受保留窗口限制（365 天）。
           </p>
           <div className="mt-2 grid gap-3 sm:grid-cols-2">
-            <label className="text-xs">
+            <label className="text-sm font-medium">
               开始时间
               <input
                 type="date"
@@ -277,7 +277,7 @@ export function BalanceHistoryDialog({
                 className="mt-1 h-9 w-full rounded-md border border-gray-300 px-3 text-sm dark:border-gray-700 dark:bg-gray-950"
               />
             </label>
-            <label className="text-xs">
+            <label className="text-sm font-medium">
               结束时间
               <input
                 type="date"
@@ -299,7 +299,7 @@ export function BalanceHistoryDialog({
                 key={value}
                 type="button"
                 onClick={() => setQuickRange(Number(value))}
-                className="h-8 rounded-md border border-gray-200 px-3 text-xs hover:bg-gray-50 dark:border-gray-700 dark:hover:bg-gray-800"
+                className="h-8 rounded-md border border-gray-200 px-3 text-sm font-medium shadow-xs hover:bg-gray-50 dark:border-gray-700 dark:hover:bg-gray-800"
               >
                 {label}
               </button>
@@ -308,9 +308,9 @@ export function BalanceHistoryDialog({
         </div>
       </section>
 
-      <section className="mt-5 rounded-lg border border-gray-200 p-5 dark:border-gray-700">
+      <section className="mt-6 rounded-lg border border-gray-200 p-4 sm:p-6 dark:border-gray-700">
         <h2 className="text-sm font-semibold">概览</h2>
-        <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-4">
+        <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
           {[
             ["结束余额", totals.end],
             ["区间净变化", totals.change],
@@ -334,60 +334,60 @@ export function BalanceHistoryDialog({
         </div>
       </section>
 
-      <div className="mt-5 grid gap-5 lg:grid-cols-2">
-        <section className="rounded-lg border border-gray-200 p-5 dark:border-gray-700">
+      <div className="mt-6 grid gap-6 lg:grid-cols-2">
+        <section className="rounded-lg border border-gray-200 p-4 sm:p-6 dark:border-gray-700">
           <div className="mb-2 text-sm font-semibold">账户分布：余额</div>
           {breakdownRows.length > 0 ? (
-            <div className="h-72 w-full">
+            <div className="h-80 w-full">
               <EChart option={breakdownOption} />
             </div>
           ) : (
-            <div className="flex h-72 items-center justify-center text-sm text-gray-500">
+            <div className="flex h-80 items-center justify-center text-sm text-gray-500">
               该分布暂无可展示的数据。
             </div>
           )}
         </section>
-        <section className="rounded-lg border border-gray-200 p-5 dark:border-gray-700">
+        <section className="rounded-lg border border-gray-200 p-4 sm:p-6 dark:border-gray-700">
           <div className="mb-2 text-sm font-semibold">趋势：余额</div>
           {filteredEntries.length > 0 ? (
-            <div className="h-72 w-full">
+            <div className="h-80 w-full">
               <EChart option={trendOption} />
             </div>
           ) : (
-            <div className="flex h-72 items-center justify-center text-sm text-gray-500">
+            <div className="flex h-80 items-center justify-center text-sm text-gray-500">
               暂无趋势数据
             </div>
           )}
         </section>
       </div>
 
-      <section className="mt-5 overflow-hidden rounded-lg border border-gray-200 dark:border-gray-700">
-        <div className="px-5 pt-5 text-sm font-semibold">账户汇总</div>
-        <div className="mt-3 overflow-x-auto">
+      <section className="mt-6 rounded-lg border border-gray-200 p-4 sm:p-6 dark:border-gray-700">
+        <div className="text-sm font-medium">账户汇总</div>
+        <div className="mt-4 overflow-x-auto rounded-lg border border-gray-200 dark:border-gray-700">
           <table className="w-full min-w-[820px] text-left text-sm">
             <thead className="bg-gray-50 text-xs text-gray-500 dark:bg-gray-800">
               <tr>
-                <th className="px-5 py-3">账户</th>
-                <th className="px-5 py-3">开始余额</th>
-                <th className="px-5 py-3">结束余额</th>
-                <th className="px-5 py-3">区间净变化</th>
-                <th className="px-5 py-3">区间收入</th>
-                <th className="px-5 py-3">区间支出</th>
-                <th className="px-5 py-3">快照覆盖</th>
+                <th className="h-12 px-3 font-medium">账户</th>
+                <th className="h-12 px-3 font-medium">开始余额</th>
+                <th className="h-12 px-3 font-medium">结束余额</th>
+                <th className="h-12 px-3 font-medium">区间净变化</th>
+                <th className="h-12 px-3 font-medium">区间收入</th>
+                <th className="h-12 px-3 font-medium">区间支出</th>
+                <th className="h-12 px-3 font-medium">快照覆盖</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
               {summaries.map((item) => (
                 <tr key={item.id}>
-                  <td className="px-5 py-3 font-medium text-blue-600">
+                  <td className="p-3 font-medium text-blue-600">
                     {item.name} ↗
                   </td>
-                  <td className="px-5 py-3">{money(item.start)}</td>
-                  <td className="px-5 py-3">{money(item.end)}</td>
-                  <td className="px-5 py-3">{money(item.change)}</td>
-                  <td className="px-5 py-3">{money(item.income)}</td>
-                  <td className="px-5 py-3">{money(item.outcome)}</td>
-                  <td className="px-5 py-3 text-gray-500">
+                  <td className="p-3">{money(item.start)}</td>
+                  <td className="p-3">{money(item.end)}</td>
+                  <td className="p-3">{money(item.change)}</td>
+                  <td className="p-3">{money(item.income)}</td>
+                  <td className="p-3">{money(item.outcome)}</td>
+                  <td className="p-3 text-xs text-gray-500">
                     {item.coverage}/{days.length}
                   </td>
                 </tr>

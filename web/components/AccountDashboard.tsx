@@ -1651,7 +1651,7 @@ export function AccountDashboard({
                     className={`size-5 shrink-0 ${active ? "text-white" : "text-gray-400 group-hover:text-gray-600 dark:text-gray-500 dark:group-hover:text-white"}`}
                   />
                   {!collapsed ? (
-                    <span className="min-w-0 flex-1 truncate text-base">
+                    <span className="min-w-0 flex-1 truncate text-sm sm:text-base">
                       {label}
                     </span>
                   ) : null}
@@ -1877,7 +1877,7 @@ export function AccountDashboard({
           className={`min-w-0 flex-1 ${sidebarCollapsed ? "md:pl-16" : "md:pl-64"}`}
         >
           <main className="mx-auto w-full max-w-7xl px-2 py-3 sm:px-4 sm:py-5 md:px-6 md:py-6">
-            <div className="min-h-[400px] overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm md:min-h-[600px] dark:border-gray-800 dark:bg-gray-900">
+            <div className="min-h-[400px] overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm md:min-h-[600px] dark:border-gray-800 dark:bg-gray-900">
               <div
                 className={
                   activePage === "overview" || activePage === "accounts"

@@ -284,7 +284,7 @@ describe("AccountDashboard mobile navigation", () => {
       screen.getByRole("heading", { name: "开始使用" }),
     ).toBeInTheDocument()
     expect(
-      screen.getByRole("heading", { name: "配置中心" }),
+      screen.getByRole("heading", { name: "配置概览" }),
     ).toBeInTheDocument()
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument()
   })
