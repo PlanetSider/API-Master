@@ -1,6 +1,7 @@
 import {
   BarChart3,
   CalendarDays,
+  ChevronDown,
   Clock3,
   Eye,
   FileText,
@@ -14,7 +15,7 @@ import {
   Sun,
   Terminal,
 } from "lucide-react"
-import type { ReactNode } from "react"
+import { useState, type ReactNode } from "react"
 
 import type { WebPreferencesResponse } from "~/web/contracts"
 
@@ -137,6 +138,7 @@ export function BasicSettingsDashboard({
   preferences,
   onNavigate,
 }: BasicSettingsDashboardProps) {
+  const [moreOpen, setMoreOpen] = useState(false)
   const current = preferences.preferences
   const openPreferences = () => onNavigate("preferences")
   const tabs = [
@@ -151,7 +153,6 @@ export function BasicSettingsDashboard({
     ["自建 AI 网关", "managedSiteChannels"],
     ["CLIProxyAPI", undefined],
     ["Claude Code Router", undefined],
-    ["更多", "importExport"],
   ] as const
 
   return (
@@ -165,20 +166,57 @@ export function BasicSettingsDashboard({
           </p>
         </div>
       </div>
-      <div className="-mx-1 overflow-x-auto border-b border-gray-200 dark:border-gray-700">
-        <div className="flex min-w-max px-1">
+      <div className="scrollbar-hide relative -mx-1 overflow-x-auto border-b border-gray-200 dark:border-gray-700">
+        <div className="flex min-w-max gap-2 px-1 pr-12">
           {tabs.map(([label, page], index) => (
             <button
               key={label}
               type="button"
               disabled={!page && index !== 0}
               onClick={() => page && onNavigate(page)}
-              className={`border-b-2 px-3 py-3 text-sm whitespace-nowrap ${index === 0 ? "border-blue-600 text-blue-600" : "border-transparent text-gray-600 hover:text-gray-900 disabled:opacity-100 dark:text-gray-400"}`}
+              title={
+                !page && index !== 0 ? "Web 端暂未提供此设置页" : undefined
+              }
+              className={`border-b-2 px-3 py-3 text-sm font-medium whitespace-nowrap transition-colors ${index === 0 ? "border-blue-600 text-blue-600 dark:border-blue-500 dark:text-blue-400" : "border-transparent text-gray-600 hover:border-gray-300 hover:text-gray-900 dark:text-gray-400 dark:hover:text-gray-200"}`}
             >
               {label}
             </button>
           ))}
+          <button
+            type="button"
+            aria-label="更多设置"
+            aria-expanded={moreOpen}
+            onClick={() => setMoreOpen((value) => !value)}
+            className="absolute right-0 bottom-0 z-10 flex items-center gap-1 border-b-2 border-transparent bg-white px-3 py-3 text-sm font-medium whitespace-nowrap text-gray-600 shadow-[-8px_0_12px_-8px_rgba(15,23,42,0.3)] hover:text-gray-900 dark:bg-gray-900 dark:text-gray-400 dark:hover:text-gray-200"
+          >
+            更多
+            <ChevronDown
+              className={`size-4 transition-transform ${moreOpen ? "rotate-180" : ""}`}
+            />
+          </button>
         </div>
+        {moreOpen ? (
+          <div className="absolute right-0 bottom-[-1px] z-20 w-56 translate-y-full rounded-md border border-gray-200 bg-white p-1 text-sm shadow-lg dark:border-gray-700 dark:bg-gray-900">
+            <button
+              type="button"
+              title="Web 端暂未提供此设置页"
+              disabled
+              className="flex w-full items-center rounded-md px-3 py-2 text-left text-gray-400 disabled:cursor-not-allowed"
+            >
+              权限管理
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setMoreOpen(false)
+                onNavigate("importExport")
+              }}
+              className="flex w-full items-center rounded-md px-3 py-2 text-left text-gray-700 hover:bg-gray-100 dark:text-gray-200 dark:hover:bg-gray-800"
+            >
+              数据与备份
+            </button>
+          </div>
+        ) : null}
       </div>
 
       <section className="space-y-4">
